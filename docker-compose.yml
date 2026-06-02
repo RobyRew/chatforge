@@ -1,0 +1,57 @@
+name: chatforge
+
+# Local dev stack: backing services + the API and web containers.
+# `docker compose up` brings everything up; or run only postgres/minio/mailpit and use `npm run dev`.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: chatforge
+      POSTGRES_PASSWORD: chatforge
+      POSTGRES_DB: chatforge
+    ports: ['5432:5432']
+    volumes: ['./.data/postgres:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U chatforge']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: chatforge
+      MINIO_ROOT_PASSWORD: chatforge123
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['./.data/minio:/data']
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/api.Dockerfile
+    environment:
+      PORT: 8787
+      CORS_ORIGIN: http://localhost:4321
+      DATABASE_URL: postgres://chatforge:chatforge@postgres:5432/chatforge
+      BETTER_AUTH_SECRET: dev-insecure-secret-change-in-production
+      BETTER_AUTH_URL: http://localhost:8787
+      PASSKEY_RPID: localhost
+      PASSKEY_ORIGIN: http://localhost:4321
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: chatforge
+    ports: ['8787:8787']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/web.Dockerfile
+    ports: ['4321:8080']
+    depends_on: [api]

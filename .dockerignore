@@ -1,6 +1,12 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.output
+**/coverage
 .git
-.gitignore
-README.md
-LICENSE
-*.md
-.DS_Store
+.data
+tmp
+*.log
+**/.env
+**/.env.*
+!**/.env.example

@@ -1,0 +1,32 @@
+{
+  "name": "chatforge",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Privacy-first chat converter + (future) chat platform.",
+  "license": "Apache-2.0",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "test:core": "npm run test --workspace @chatforge/core",
+    "dev:web": "npm run dev --workspace @chatforge/web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

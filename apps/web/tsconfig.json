@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": [],
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "paths": {
+      "@chatforge/core": ["../../packages/core/src/index.ts"],
+      "@chatforge/core/worker": ["../../packages/core/src/worker.ts"],
+      "@chatforge/core/transforms": ["../../packages/core/src/transforms.ts"],
+      "@chatforge/core/richtext": ["../../packages/core/src/richtext.ts"],
+      "@chatforge/types": ["../../packages/types/src/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/worker"]
+}

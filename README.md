@@ -1,13 +1,46 @@
-# ChatConverter
-A web based tool to convert chat exports of popular messaging apps like Telegram, WhatsApp, Instagram, etc.
+# ChatForge
 
-## Analytics (optional)
+> Privacy-first **chat converter** + (future) chat platform.
+> Import your *own* official chat exports, convert losslessly between formats, keep everything
+> end-to-end encrypted. Web now; native macOS/iOS/Android later.
 
-Self-hosted Umami can be wired at deploy time without rebuilding. In Dokploy → this app → **Environment**, set:
+This is a greenfield rewrite of the old `chat-converter` (vanilla JS, WhatsApp⇄Telegram only).
+See [`agents.md`](./agents.md) for the architecture decision log — the source of truth.
 
-| Variable | Value |
-|---|---|
-| `UMAMI_SCRIPT_URL` | `https://stats.cosmincalin.es/script.js` |
-| `UMAMI_WEBSITE_ID` | UUID from Umami → Settings → Websites |
+## What works today (v1)
+- **Conversion engine** (`@chatforge/core`): plugin registry + lossless canonical model.
+  - Importers: **WhatsApp** (`.txt`), **Telegram** (JSON). _(Meta/Discord/Signal stubbed.)_
+  - Exporters: **Telegram JSON**, **WhatsApp txt**, **HTML viewer**, **Markdown**, **canonical JSON**.
+  - Every conversion produces a **fidelity report** (preserved / approximated / dropped).
+  - Runs the **same engine** in the browser (Web Worker) and in Node (server sandbox).
+- **Web SPA** (`@chatforge/web`): drag-drop converter, auto-detect, preview report, download — 100% client-side.
+- **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery; MLS stubbed.
+- **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
+  server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Auth/storage are scaffolded for better-auth + Drizzle.
+- **Infra**: multi-stage Dockerfiles (web → nginx-unprivileged, api → node:22), nginx CSP, `docker compose` (Postgres/MinIO/Mailpit), Dokploy notes.
 
-A startup script in the container (`docker-entrypoint.d/30-inject-umami.sh`) substitutes a `<!-- UMAMI -->` placeholder in `index.html` with the real `<script defer …>` tag, with `data-do-not-track="true"` honouring browser DNT. If either env var is missing the placeholder is just stripped — no broken script tag ships.
+**Verified:** 18/18 tests green (core 8 · crypto 4 · api 6); all packages TypeScript-strict-clean; web builds.
+
+## Not yet (next iteration)
+Web auth/dashboard/admin UI · api-client codegen from OpenAPI · Meta/Discord/Signal importers · live E2E chat (MLS) · native apps.
+
+## Layout
+`packages/{types,core,crypto,api-client,ui,config}` · `apps/{web,api}` · `infra/`
+(full map in [`agents.md`](./agents.md)).
+
+## Quickstart
+```bash
+npm install                              # installs all workspaces
+npm test                                 # run every workspace's tests (turbo)
+npm run dev:web                          # converter UI at http://localhost:4321 (no backend needed)
+npm run dev   --workspace @chatforge/api # API at http://localhost:8787 ( /health, /openapi.json )
+docker compose up                        # full local stack: web + api + postgres + minio + mailpit
+```
+
+## Privacy
+Conversion is client-side by default — plaintext never leaves your browser. Large files can
+opt into an ephemeral, audit-logged server sandbox. Saved data is always E2E-encrypted; not
+even an admin can read it. Admin controls accounts/roles/features — never content.
+
+## License
+Apache-2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

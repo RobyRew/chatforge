@@ -1,0 +1,42 @@
+{
+  "name": "@chatforge/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ChatForge backend — Hono + zod-openapi + Drizzle, RBAC admin, opt-in server-side conversion sandbox.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "clean": "rm -rf dist .turbo coverage"
+  },
+  "dependencies": {
+    "@better-auth/core": "^1.6.13",
+    "@better-auth/passkey": "^1.6.13",
+    "@better-auth/utils": "^0.4.1",
+    "@chatforge/core": "*",
+    "@chatforge/types": "*",
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-openapi": "^0.18.3",
+    "better-auth": "^1.6.13",
+    "better-call": "^2.0.3",
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.6.16",
+    "pg": "^8.13.1",
+    "ws": "^8.21.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.30.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
