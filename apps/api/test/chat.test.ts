@@ -83,7 +83,7 @@ function client(userId: string) {
 
 describe('chat gateway (in-process, MemoryChatRepo)', () => {
   it('relays messages + delivered + typing + read + presence over a DM', async () => {
-    const res = await rest('/chat/conversations', 'POST', { userId: B }, 'owner-token');
+    const res = await rest('/api/chat/conversations', 'POST', { userId: B }, 'owner-token');
     expect(res.status).toBe(200);
     const { conversationId } = (await res.json()) as { conversationId: string };
     expect(conversationId).toBeTruthy();
