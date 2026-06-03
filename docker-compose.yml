@@ -21,6 +21,9 @@ services:
 
   minio:
     image: minio/minio:latest
+    # Dev-only (object storage for attachments, CH-5). Not started in prod — saves memory.
+    # Run locally with: docker compose --profile dev up
+    profiles: ['dev']
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
@@ -30,6 +33,8 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
+    # Dev-only (local SMTP capture). Not started in prod.
+    profiles: ['dev']
     ports: ['1025:1025', '8025:8025']
 
   api:
