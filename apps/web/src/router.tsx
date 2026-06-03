@@ -1,16 +1,21 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanstack/react-router';
 import { AdminPage } from './features/admin/AdminPage';
+import { ADMIN_SECTIONS } from './features/admin/registry';
 import { AccountPage } from './features/auth/AccountPage';
 import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { Converter } from './features/converter/Converter';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useSession } from './lib/authClient';
+import { useMe } from './lib/useMe';
 
 const navLink = 'text-zinc-300 transition hover:text-white [&.active]:text-sky-400';
 
 function Shell() {
   const { data } = useSession();
+  const { me } = useMe();
+  // Server-computed permissions decide the shortcut; the API still enforces every action regardless.
+  const canAdmin = !!me && ADMIN_SECTIONS.some((s) => me.permissions.includes(s.permission));
   return (
     <div className="min-h-full bg-gradient-to-b from-zinc-950 to-zinc-900 text-zinc-100">
       <div className="mx-auto flex max-w-5xl flex-col gap-6 px-5 py-8">
@@ -29,6 +34,11 @@ function Shell() {
             {data && (
               <Link to="/dashboard" className={navLink}>
                 Dashboard
+              </Link>
+            )}
+            {canAdmin && (
+              <Link to="/admin" className={navLink}>
+                Admin
               </Link>
             )}
             <Link to="/account" className={navLink}>

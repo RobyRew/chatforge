@@ -15,6 +15,8 @@ export default defineConfig({
       { find: '@chatforge/core/transforms', replacement: r('../../packages/core/src/transforms.ts') },
       { find: '@chatforge/core/richtext', replacement: r('../../packages/core/src/richtext.ts') },
       { find: '@chatforge/core', replacement: r('../../packages/core/src/index.ts') },
+      // MLS provider for the chat worker (libsodium-free subpath — no sodium alias needed).
+      { find: '@chatforge/crypto/mls', replacement: r('../../packages/crypto/src/mls.ts') },
       { find: '@chatforge/types', replacement: r('../../packages/types/src/index.ts') },
     ],
   },

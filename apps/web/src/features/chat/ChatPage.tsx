@@ -1,12 +1,17 @@
-import { useSession } from '../../lib/authClient';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { Me } from '../../lib/api';
+import { useMe } from '../../lib/useMe';
 import { AuthPanel } from '../auth/AuthPanel';
+import { ConversationList } from './ConversationList';
+import { NewChat } from './NewChat';
+import { Thread } from './Thread';
+import { useChat } from './useChat';
 
-export function ChatPage() {
-  const { data, isPending } = useSession();
+export function ChatPage(): ReactNode {
+  const { me, loading } = useMe();
 
-  if (isPending) return <p className="text-sm text-zinc-400">Loading…</p>;
-
-  if (!data) {
+  if (loading) return <p className="text-sm text-zinc-400">Loading…</p>;
+  if (!me) {
     return (
       <div className="mx-auto flex max-w-md flex-col gap-4">
         <h1 className="text-xl font-semibold">Chat</h1>
@@ -15,17 +20,40 @@ export function ChatPage() {
       </div>
     );
   }
+  return <ChatApp me={me} />;
+}
+
+function ChatApp({ me }: { me: Me }): ReactNode {
+  const state = useChat(me);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const active = state.conversations.find((c) => c.id === activeId) ?? null;
+
+  useEffect(() => {
+    if (!activeId && state.conversations[0]) setActiveId(state.conversations[0].id);
+  }, [state.conversations, activeId]);
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <h1 className="text-xl font-semibold">Chat</h1>
-      <p className="text-sm text-zinc-300">
-        Signed in as <span className="font-medium text-zinc-100">{data.user.email}</span>.
-      </p>
-      <p className="text-sm text-zinc-400">
-        🔒 Real-time, end-to-end encrypted (MLS) messaging is being built (transport → MLS → UI). The
-        account &amp; passkey foundation is live now.
-      </p>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Chat</h1>
+        {!state.ready && <span className="text-xs text-zinc-500">connecting…</span>}
+      </div>
+      {state.error && <p className="rounded-lg border border-rose-800/60 bg-rose-950/30 p-2 text-xs text-rose-300">{state.error}</p>}
+      <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+        <aside className="flex flex-col gap-3">
+          <NewChat onCreated={setActiveId} />
+          <ConversationList state={state} activeId={activeId} onSelect={setActiveId} />
+        </aside>
+        <section>
+          {active ? (
+            <Thread conversation={active} state={state} />
+          ) : (
+            <div className="grid h-[72vh] place-items-center rounded-xl border border-zinc-800 bg-zinc-900/40 text-sm text-zinc-500">
+              Select or start a conversation.
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

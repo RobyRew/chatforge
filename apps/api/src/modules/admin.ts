@@ -16,12 +16,21 @@ const actor = (c: { get: (k: 'user') => SessionUser | undefined }): SessionUser 
 
 function parsePermissions(value: unknown): Permission[] | null {
   if (!Array.isArray(value)) return null;
+  if (value.length > 100) return null;
   const out: Permission[] = [];
   for (const v of value) {
     if (!isPermission(v)) return null;
     if (!out.includes(v)) out.push(v);
   }
   return out;
+}
+
+/** Coerce/clamp a query param to a safe integer (rejects NaN/negative/huge → bounded). */
+function clampInt(raw: string | undefined, dflt: number, min: number, max: number): number {
+  if (raw === undefined) return dflt;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(Math.max(Math.trunc(n), min), max);
 }
 
 /** Returns an error string if the actor may not assign `roleName`, else null (anti-escalation). */
@@ -39,9 +48,9 @@ async function assertCanAssignRole(a: SessionUser, roleName: string): Promise<st
 // ── Users ──────────────────────────────────────────────────────────────────
 
 adminModule.get('/users', requirePermission('users:read'), async (c) => {
-  const search = c.req.query('search') || undefined;
-  const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined;
-  const offset = c.req.query('offset') ? Number(c.req.query('offset')) : undefined;
+  const search = (c.req.query('search') || '').slice(0, 200) || undefined;
+  const limit = clampInt(c.req.query('limit'), 50, 1, 200);
+  const offset = clampInt(c.req.query('offset'), 0, 0, 1_000_000);
   return c.json({ users: await repo().listUsers({ search, limit, offset }) });
 });
 
@@ -97,6 +106,7 @@ adminModule.post('/users', requirePermission('users:write'), async (c) => {
 adminModule.post('/users/:id/role', requirePermission('roles:assign'), async (c) => {
   const a = actor(c);
   const id = c.req.param('id');
+  if (id === a.id) return c.json({ error: 'cannot change your own role' }, 409);
   const { role } = (await c.req.json().catch(() => ({}))) as { role?: unknown };
   if (typeof role !== 'string') return c.json({ error: 'role required' }, 400);
   const target = await repo().getUser(id);
@@ -138,6 +148,7 @@ adminModule.get('/users/:id/grants', requirePermission('permissions:grant'), asy
 adminModule.post('/users/:id/grants', requirePermission('permissions:grant'), async (c) => {
   const a = actor(c);
   const id = c.req.param('id');
+  if (id === a.id) return c.json({ error: 'cannot change your own permissions' }, 409);
   const body = (await c.req.json().catch(() => ({}))) as { permission?: unknown; effect?: unknown };
   if (!isPermission(body.permission)) return c.json({ error: 'unknown permission' }, 400);
   const effect = body.effect === 'deny' ? 'deny' : 'allow';
@@ -154,6 +165,7 @@ adminModule.post('/users/:id/grants', requirePermission('permissions:grant'), as
 adminModule.delete('/users/:id/grants/:permission', requirePermission('permissions:grant'), async (c) => {
   const a = actor(c);
   const id = c.req.param('id');
+  if (id === a.id) return c.json({ error: 'cannot change your own permissions' }, 409);
   const permission = c.req.param('permission');
   if (!isPermission(permission)) return c.json({ error: 'unknown permission' }, 400);
   await repo().removeGrant(id, permission);
@@ -241,6 +253,6 @@ adminModule.post('/flags/:flag', requirePermission('flags:write'), async (c) => 
 // ── Audit log ──────────────────────────────────────────────────────────────
 
 adminModule.get('/audit', requirePermission('audit:read'), async (c) => {
-  const limit = c.req.query('limit') ? Number(c.req.query('limit')) : 100;
+  const limit = clampInt(c.req.query('limit'), 100, 1, 500);
   return c.json({ audit: await repo().listAudit(limit) });
 });

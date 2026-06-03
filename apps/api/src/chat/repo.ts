@@ -1,7 +1,7 @@
 import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { getDb } from '../db';
-import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, userPresence } from '../db/schema';
+import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, user, userPresence } from '../db/schema';
 
 /**
  * Persistence boundary for chat. Bodies are opaque base64 `ciphertext` — the server never reads
@@ -69,8 +69,12 @@ export class DrizzleChatRepo implements ChatRepo {
       .where(eq(chatMembers.userId, userId));
     const out: ConversationSummary[] = [];
     for (const row of mine) {
-      const members = await this.memberIds(row.c);
-      out.push({ id: row.c, peerIds: members.filter((m) => m !== userId), lastReadSeq: row.last });
+      const peers = await this.db
+        .select({ id: user.id, email: user.email })
+        .from(chatMembers)
+        .innerJoin(user, eq(chatMembers.userId, user.id))
+        .where(and(eq(chatMembers.conversationId, row.c), ne(chatMembers.userId, userId)));
+      out.push({ id: row.c, peers, lastReadSeq: row.last });
     }
     return out;
   }

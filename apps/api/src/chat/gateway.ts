@@ -18,10 +18,32 @@ export interface GatewayOptions {
  * relays opaque-ciphertext messages to conversation members, and broadcasts presence/typing/read.
  * The server never inspects message bodies.
  */
+// ── Abuse limits (defence against a hostile client) ──
+const MAX_PAYLOAD = 256 * 1024; // bytes per frame — ws closes the socket (1009) if exceeded
+const MAX_CONNECTIONS_PER_USER = 10; // multi-device, but bounded
+const RATE_BURST = 40; // token bucket: burst…
+const RATE_REFILL_PER_SEC = 20; // …and sustained messages/sec per socket
+
 export function createChatGateway({ server, repo, authenticate, path = '/ws' }: GatewayOptions): WebSocketServer {
-  const wss = new WebSocketServer({ server, path });
+  const wss = new WebSocketServer({ server, path, maxPayload: MAX_PAYLOAD });
   const registry = new Map<string, Set<WebSocket>>();
   const userIdOf = new WeakMap<WebSocket, string>();
+  const buckets = new WeakMap<WebSocket, { tokens: number; last: number }>();
+
+  /** Token-bucket rate limit per socket; returns false when the caller is sending too fast. */
+  const allow = (ws: WebSocket): boolean => {
+    const now = Date.now();
+    let b = buckets.get(ws);
+    if (!b) {
+      b = { tokens: RATE_BURST, last: now };
+      buckets.set(ws, b);
+    }
+    b.tokens = Math.min(RATE_BURST, b.tokens + ((now - b.last) / 1000) * RATE_REFILL_PER_SEC);
+    b.last = now;
+    if (b.tokens < 1) return false;
+    b.tokens -= 1;
+    return true;
+  };
 
   const online = (userId: string): boolean => (registry.get(userId)?.size ?? 0) > 0;
 
@@ -54,6 +76,17 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
         set = new Set();
         registry.set(uid, set);
       }
+      // Bound connections per user — evict the oldest socket if at the cap.
+      while (set.size >= MAX_CONNECTIONS_PER_USER) {
+        const oldest = set.values().next().value;
+        if (!oldest) break;
+        set.delete(oldest);
+        try {
+          oldest.close(1013, 'too many connections');
+        } catch {
+          /* already closing */
+        }
+      }
       set.add(ws);
       userIdOf.set(ws, uid);
 
@@ -62,6 +95,10 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
 
       ws.on('message', (raw) => {
         void (async () => {
+          if (!allow(ws)) {
+            send(ws, { t: 'error', message: 'rate limited' });
+            return;
+          }
           let parsed: unknown;
           try {
             parsed = JSON.parse(raw.toString());

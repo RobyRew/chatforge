@@ -203,6 +203,35 @@ previously ran on the in-memory dev `stores`, not the real DB.
 protection, custom roles, flags/audit) + typecheck + web build. DB-backed bits (bootstrap, user creation,
 password change) verified live (no Docker here). Migration `0002`.
 
+## ADR-0022 — CH-4 chat UI: MLS in a Web Worker + IndexedDB; hardened gateway (2026-06-03) · Accepted
+**Context:** CH-3 shipped the MLS engine, WS transport and REST; CH-4 is the chat UI + client
+orchestration, plus server-side abuse hardening ("safety first on the server").
+**Decision:**
+- **MLS runs in a dedicated Web Worker** (`apps/web/src/worker/chat.worker.ts`) importing the
+  libsodium-free `@chatforge/crypto/mls`. All key material + per-conversation group state live in the
+  worker and the origin's **IndexedDB** (`lib/chatDb.ts`: `bundles`/`groups`/`messages`), never on the
+  main thread or the wire in plaintext. The worker processes ops **strictly serially** so the ratchet
+  never races. v1 stores group state unsealed in IndexedDB (origin-isolated; the *server* stays
+  zero-knowledge); device-at-rest sealing via `vault` is a follow-up.
+- **Forward-secrecy-aware history:** decrypted plaintext is cached locally per message (MLS can't
+  re-decrypt old ciphertext); on load the client renders the local cache and decrypts only messages
+  with `seq` beyond what it already has, **in order**.
+- **Orchestration** (`lib/chatClient.ts`): drives the worker + the same-origin WebSocket (cookie-authed
+  upgrade, auto-reconnect) + REST; tops the server KeyPackage pool up to 5; **processes pending Welcomes
+  (joins) before decrypting**; optimistic send confirmed by `delivered`; presence/typing/read receipts.
+  React via a subscribable snapshot (`useChat`). Components: ConversationList / NewChat / Thread / Composer.
+- **Navbar Admin shortcut** shown from server-computed permissions (`/api/me`) — covers owner/admin/
+  moderator + any delegated user. The panel + every endpoint enforce server-side regardless of UI.
+- **Server hardening (vs a hostile client):** WS `maxPayload` 256 KB + per-socket token-bucket rate limit
+  + per-user connection cap; zod frame caps (ciphertext ≤ 256 KB, bounded ids); REST caps on KeyPackage
+  size/count + Welcome size; admin pagination clamping; **self-modification of own role/grants blocked**
+  (no self-escalation/lockout) — on top of existing anti-escalation, owner-protection, RBAC-on-every-route,
+  suspended⇒no-perms, and Drizzle parameterized queries.
+**Status:** Accepted. Verified: `turbo run test typecheck` (crypto 7, core 25, api 21, all typechecks) +
+web build (the chat worker bundles ts-mls + @hpke/core). The **live two-browser E2E flow needs on-machine
+testing** — the client (worker/WS/IndexedDB/MLS ordering) can't be runtime-tested in the sandbox; expect
+minor iteration. ts-mls remains unaudited (ADR-0018).
+
 ---
 
 # Conventions
@@ -240,4 +269,5 @@ against (2026-06-01):
 - [x] **CH-2 realtime transport** — `ws` gateway (session-authed upgrade) + chat schema (conversations/members/messages/presence) behind a swappable `ChatRepo`; message relay + delivered + typing + read receipts + presence. Server stores **opaque ciphertext** only. **9 API tests** incl. an in-process 2-client WS integration test (no Docker). Shared wire protocol in `@chatforge/types`.
 - [x] **CH-3 MLS end-to-end** — real `MlsProvider` over **ts-mls 1.6.2** (`MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`) behind a bytes-only, stateless seam (ADR-0020): `generateKeyPackage`/`createGroup`/`startDm`/`addMember`/`joinGroup`/`encrypt`/`decrypt`, group state persisted via `encode/decodeGroupState`. Server adds `key_packages` + `mls_welcomes` (public-only) + REST under `/api/chat` (publish/claim KeyPackage, relay/ack Welcome) on the swappable `ChatRepo`; committed migration `0001_flawless_madrox.sql`. **Verified here (no Docker):** crypto vitest (2-member group, both-way exchange, reload-from-bytes, foreign-ciphertext reject) + api vitest (REST bootstrap + a real MLS message over the CH-2 gateway; DB stores only ciphertext). **crypto 7 + api 11 tests** green; web builds clean.
 - [x] **Admin console + RBAC delegation (ADR-0021)** — env-bootstrap owner (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, first-run only); built-in roles + **custom roles** + per-user **grants** (allow/deny delegation) behind a swappable `AdminRepo` (Drizzle + in-memory); hardened (anti-escalation, last-owner/self-suspend protection, suspended⇒no perms, full audit). Admin module migrated off `stores` to the real DB. Modular web console (`features/admin/*` registry: Users/Roles/Flags/Audit) + dashboard + change-password; `/api/me` drives permission-gated UI; `mustChangePassword` flow + `method:password|invite|ldap` seam. Migration `0002`. **9 admin tests** (incl. delegation end-to-end) + typecheck + web build green; DB-backed bootstrap/creation/password verified live.
-- [ ] Next: **CH-4** chat UI (`apps/web/src/features/chat/`: ConversationList/NewChat/Thread/Composer; MLS in a worker; group state in IndexedDB via vault; decrypted `Message` reuses `RichText`/`ChatPreview`) → **CH-5** encrypted attachments. Also pending: api-client codegen, Meta/Discord importers.
+- [x] **CH-4 chat UI (ADR-0022)** — MLS in a Web Worker + IndexedDB persistence (`worker/chat.worker.ts`, `lib/chat{Db,Client,WorkerClient,Protocol}.ts`); same-origin cookie-authed WS client w/ reconnect; `features/chat/` ConversationList / NewChat (by email) / Thread / Composer; presence + typing + read receipts; optimistic send; navbar **Admin** shortcut from `/api/me`. Server hardened: WS `maxPayload` + per-socket rate limit + per-user conn cap, zod frame caps, REST KeyPackage/Welcome size caps, admin pagination clamp + **self role/grant guards**. `turbo test typecheck` + web build green; **live 2-browser E2E pending on-machine** (untestable in sandbox).
+- [ ] Next: **CH-5** encrypted attachments (`blob.ts`→MinIO; reference `{objectKey, wrappedKey}` inside the MLS message). Also pending: device-at-rest sealing of chat group state (vault), api-client codegen, Meta/Discord importers, RichText reuse in chat bubbles.

@@ -1,0 +1,19 @@
+/**
+ * Worker protocol for the MLS chat worker. Deliberately uses only plain values (strings, base64,
+ * numbers) so the main thread never imports `ts-mls`/crypto types — all key material stays inside
+ * the worker (and the worker's IndexedDB). Public artifacts cross as base64.
+ */
+export type ChatWorkerRequest =
+  | { id: string; type: 'init'; userId: string }
+  | { id: string; type: 'generateKeyPackages'; count: number }
+  | { id: string; type: 'startDm'; conversationId: string; peerKeyPackage: string }
+  | { id: string; type: 'join'; conversationId: string; welcome: string }
+  | { id: string; type: 'hasGroup'; conversationId: string }
+  | { id: string; type: 'encrypt'; conversationId: string; text: string }
+  | { id: string; type: 'decrypt'; conversationId: string; ciphertext: string };
+
+export type DecryptResult = { kind: 'application'; text: string; ts: number } | { kind: 'handshake' };
+
+export type ChatWorkerResponse =
+  | { id: string; ok: true; result: unknown }
+  | { id: string; ok: false; error: string };

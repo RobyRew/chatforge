@@ -52,7 +52,9 @@ chatModule.post('/keypackages', requirePermission('chat:use'), async (c) => {
     ? body.keyPackages.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
   if (!packages.length) return c.json({ error: 'keyPackages (non-empty string array) required' }, 400);
-  await getChatRepo().publishKeyPackages(me.id, deviceId, packages);
+  if (packages.length > 100) return c.json({ error: 'too many key packages (max 100)' }, 413);
+  if (packages.some((p) => p.length > 32_768)) return c.json({ error: 'key package too large' }, 413);
+  await getChatRepo().publishKeyPackages(me.id, deviceId.slice(0, 128), packages);
   return c.json({ published: packages.length });
 });
 
@@ -79,6 +81,7 @@ chatModule.post('/welcomes', requirePermission('chat:use'), async (c) => {
   if (!body.conversationId || !body.recipientId || !body.welcome) {
     return c.json({ error: 'conversationId, recipientId, welcome required' }, 400);
   }
+  if (body.welcome.length > 262_144) return c.json({ error: 'welcome too large' }, 413);
   const repo = getChatRepo();
   if (!(await repo.isMember(body.conversationId, me.id))) return c.json({ error: 'forbidden' }, 403);
   if (!(await repo.isMember(body.conversationId, body.recipientId))) return c.json({ error: 'recipient is not a member' }, 400);

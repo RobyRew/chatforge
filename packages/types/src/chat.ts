@@ -3,17 +3,24 @@ import { z } from 'zod';
 /**
  * Realtime chat wire protocol, shared by the API gateway and the web client.
  * Message bodies are opaque base64 `ciphertext` — the server never inspects them (MLS, CH-3).
+ *
+ * Hard caps on every attacker-controlled field (defence in depth alongside the gateway's
+ * `maxPayload` + per-connection rate limit): a conversation id is a UUID (36 chars), and a single
+ * MLS application message base64-encodes to well under 256 KB.
  */
+export const MAX_CIPHERTEXT = 262_144; // 256 KB of base64
+const convId = z.string().min(1).max(64);
+
 export const ClientFrameSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('sub'), conversationId: z.string().min(1) }),
+  z.object({ t: z.literal('sub'), conversationId: convId }),
   z.object({
     t: z.literal('send'),
-    conversationId: z.string().min(1),
-    ciphertext: z.string().min(1),
-    clientId: z.string().min(1),
+    conversationId: convId,
+    ciphertext: z.string().min(1).max(MAX_CIPHERTEXT),
+    clientId: z.string().min(1).max(64),
   }),
-  z.object({ t: z.literal('typing'), conversationId: z.string().min(1) }),
-  z.object({ t: z.literal('read'), conversationId: z.string().min(1), seq: z.number().int().nonnegative() }),
+  z.object({ t: z.literal('typing'), conversationId: convId }),
+  z.object({ t: z.literal('read'), conversationId: convId, seq: z.number().int().nonnegative().max(2_000_000_000) }),
 ]);
 export type ClientFrame = z.infer<typeof ClientFrameSchema>;
 
@@ -25,9 +32,14 @@ export type ServerFrame =
   | { t: 'read'; conversationId: string; userId: string; seq: number }
   | { t: 'error'; message: string };
 
+export interface ConversationPeer {
+  id: string;
+  email: string;
+}
+
 export interface ConversationSummary {
   id: string;
-  peerIds: string[];
+  peers: ConversationPeer[];
   lastReadSeq: number;
 }
 

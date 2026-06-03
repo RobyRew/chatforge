@@ -86,6 +86,13 @@ describe('admin — anti-privilege-escalation', () => {
     // …and cannot delegate a permission an admin doesn't hold (roles:manage is owner-only).
     expect((await req('/api/admin/users/u_owner/grants', 'POST', { permission: 'roles:manage', effect: 'allow' }, USER)).status).toBe(403);
   });
+
+  it('blocks changing your OWN role or permissions (no self-escalation / self-lockout)', async () => {
+    await req('/api/admin/users/u_user/role', 'POST', { role: 'admin' }, OWNER); // promote to admin
+    expect((await req('/api/admin/users/u_user/role', 'POST', { role: 'moderator' }, USER)).status).toBe(409);
+    expect((await req('/api/admin/users/u_user/grants', 'POST', { permission: 'chat:use', effect: 'allow' }, USER)).status).toBe(409);
+    expect((await req('/api/admin/users/u_user/grants/chat:use', 'DELETE', undefined, USER)).status).toBe(409);
+  });
 });
 
 describe('admin — custom roles', () => {

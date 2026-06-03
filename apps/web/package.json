@@ -17,6 +17,7 @@
     "@better-auth/passkey": "^1.6.13",
     "@better-auth/utils": "^0.4.1",
     "@chatforge/core": "*",
+    "@chatforge/crypto": "*",
     "@chatforge/types": "*",
     "@tanstack/react-router": "^1.170.10",
     "better-auth": "^1.6.13",

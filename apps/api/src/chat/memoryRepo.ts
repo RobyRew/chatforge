@@ -37,7 +37,7 @@ export class MemoryChatRepo implements ChatRepo {
       if (conv.members.includes(userId)) {
         out.push({
           id: conv.id,
-          peerIds: conv.members.filter((m) => m !== userId),
+          peers: conv.members.filter((m) => m !== userId).map((id) => ({ id, email: id })),
           lastReadSeq: this.lastRead.get(this.key(conv.id, userId)) ?? 0,
         });
       }

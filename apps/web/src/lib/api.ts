@@ -3,6 +3,8 @@
  * so the better-auth session authenticates the admin endpoints. Errors surface the server's
  * `{ error }` message. The web treats permissions as opaque strings (the API is the source of truth).
  */
+import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
 export class ApiError extends Error {
@@ -118,5 +120,25 @@ export const api = {
 
     listAudit: (limit = 100): Promise<AuditEntry[]> =>
       get<{ audit: AuditEntry[] }>(`/api/admin/audit?limit=${limit}`).then((r) => r.audit),
+  },
+
+  chat: {
+    listConversations: (): Promise<ConversationSummary[]> =>
+      get<{ conversations: ConversationSummary[] }>('/api/chat/conversations').then((r) => r.conversations),
+    createDm: (target: { userId?: string; email?: string }): Promise<{ conversationId: string; created: boolean }> =>
+      post('/api/chat/conversations', target),
+    listMessages: (conversationId: string, limit = 100): Promise<ChatMessageDTO[]> =>
+      get<{ messages: ChatMessageDTO[] }>(`/api/chat/conversations/${conversationId}/messages?limit=${limit}`).then((r) => r.messages),
+
+    keyPackageCount: (): Promise<number> => get<{ count: number }>('/api/chat/keypackages').then((r) => r.count),
+    publishKeyPackages: (deviceId: string, keyPackages: string[]): Promise<{ published: number }> =>
+      post('/api/chat/keypackages', { deviceId, keyPackages }),
+    claimKeyPackage: (target: { userId?: string; email?: string }): Promise<{ userId: string; keyPackage: string }> =>
+      post('/api/chat/keypackages/claim', target),
+
+    listWelcomes: (): Promise<WelcomeDTO[]> => get<{ welcomes: WelcomeDTO[] }>('/api/chat/welcomes').then((r) => r.welcomes),
+    relayWelcome: (conversationId: string, recipientId: string, welcome: string): Promise<{ id: string }> =>
+      post('/api/chat/welcomes', { conversationId, recipientId, welcome }),
+    ackWelcome: (id: string): Promise<{ ok: boolean }> => del(`/api/chat/welcomes/${id}`),
   },
 };
