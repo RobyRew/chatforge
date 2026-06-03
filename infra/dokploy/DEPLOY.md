@@ -32,9 +32,12 @@ expose **only the web service** to the internet.
    - `BETTER_AUTH_SECRET` = `openssl rand -base64 32`
    - `BETTER_AUTH_URL` = `https://chat.<domain>`  ·  `CORS_ORIGIN` = `https://chat.<domain>`
    - `PASSKEY_RPID` = `chat.<domain>`  ·  `PASSKEY_ORIGIN` = `https://chat.<domain>`
+   - `ADMIN_EMAIL` + `ADMIN_PASSWORD` — **first-run owner** (seeded only if no owner exists; inert once
+     you change it in the panel). Set these for the very first deploy, then you may remove them.
    - `POSTGRES_PASSWORD` (+ matching `DATABASE_URL`), `MINIO_ROOT_PASSWORD` — set real secrets.
-4. **Deploy.** On boot the API runs `drizzle-kit migrate` (creates all 15 tables — incl. CH-3
-   `key_packages` + `mls_welcomes`) then starts. The web SPA build needs no `VITE_API_URL` (same-origin).
+4. **Deploy.** On boot the API runs `drizzle-kit migrate` (creates all 17 tables — incl. CH-3
+   `key_packages`/`mls_welcomes` + admin `roles`/`user_grants`), then **bootstraps** the built-in roles +
+   the env owner, then starts. The web SPA build needs no `VITE_API_URL` (same-origin).
 
 That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 
@@ -69,6 +72,8 @@ That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 | API | `CORS_ORIGIN` | `https://chat.<domain>` |
 | API | `PASSKEY_RPID` | `chat.<domain>` (host, no scheme) |
 | API | `PASSKEY_ORIGIN` | `https://chat.<domain>` (no trailing slash) |
+| API | `ADMIN_EMAIL` | first-run owner email (seeded only if no owner exists; then inert) |
+| API | `ADMIN_PASSWORD` | first-run owner password (min 8 chars) |
 | API | `S3_*` | object storage (CH-5 only) |
 | Web (build arg) | `VITE_API_URL` | **leave unset** (same-origin). Only set for a split-origin deploy. |
 
@@ -86,7 +91,10 @@ With same-origin, `PASSKEY_RPID` = the single domain (`chat.<domain>`) and `PASS
 1. `https://chat.<domain>/` → converter loads (works even if the API is down).
 2. `/account` → create an account, **register a passkey**, sign out, sign in with the passkey.
 3. `https://chat.<domain>/api/openapi.json` → 200 (API reachable, same-origin).
-4. Chat presence/typing/read once the CH-4 UI lands (the `/ws` transport is already live).
+4. Sign in as the bootstrap owner (`ADMIN_EMAIL`) → **`/dashboard`** then **`/admin`** → Users / Roles /
+   Feature flags / Audit load; create a user, assign a role, delegate a permission. Then change the owner
+   password in `/change-password` — the env `ADMIN_PASSWORD` is now inert.
+5. Chat presence/typing/read once the CH-4 UI lands (the `/ws` transport is already live).
 
 ## Notes
 - **RAM (2 GB VPS):** the API runs via `tsx`. To cut memory/startup, compile to JS (esbuild/tsup) for

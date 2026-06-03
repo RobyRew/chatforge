@@ -3,10 +3,14 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app';
 import { createChatGateway } from './chat/gateway';
 import { DrizzleChatRepo } from './chat/repo';
+import { bootstrap } from './db/bootstrap';
 import { loadEnv } from './env';
 
 const env = loadEnv();
 const app = createApp();
+
+// Seed built-in roles + the env-defined owner (first run only). Runs after `drizzle-kit migrate`.
+void bootstrap();
 
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
   // eslint-disable-next-line no-console

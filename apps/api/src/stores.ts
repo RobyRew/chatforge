@@ -1,14 +1,13 @@
 import type { ConversionRecord } from '@chatforge/types';
-import type { Role } from './rbac';
 
 /**
- * In-memory data layer standing in for Postgres until Drizzle is wired (see db/schema.ts for
- * the real design). Keeping it behind this module means swapping to the DB is a localized change.
+ * In-memory data layer for the dev bearer-token fallback and the converter/chat API tests (the real
+ * admin data lives in Postgres via AdminRepo). Keeping it behind this module localizes the seam.
  */
 export interface User {
   id: string;
   email: string;
-  role: Role;
+  role: string;
   status: 'active' | 'suspended';
   createdAt: number;
 }

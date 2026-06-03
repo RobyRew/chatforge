@@ -21,7 +21,10 @@ export function createAuth(db: DB = getDb()) {
     emailAndPassword: { enabled: true, requireEmailVerification: false },
     user: {
       additionalFields: {
+        // input:false → clients can never self-assign these; only the admin API / bootstrap set them.
         role: { type: 'string', required: false, defaultValue: 'user', input: false },
+        status: { type: 'string', required: false, defaultValue: 'active', input: false },
+        mustChangePassword: { type: 'boolean', required: false, defaultValue: false, input: false },
       },
     },
     plugins: [passkey({ rpID: env.rpID, rpName: 'ChatForge', origin: env.passkeyOrigin })],

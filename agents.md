@@ -176,6 +176,33 @@ zero-knowledge server (ADR-0001).
 foreign-ciphertext rejection) + an api vitest (REST bootstrap + a real MLS message relayed over the gateway;
 DB holds only ciphertext). `ts-mls` remains **unaudited** (ADR-0018 caveat stands).
 
+## ADR-0021 — Admin console: env-bootstrap owner + RBAC (roles + custom roles + grants) (2026-06-03) · Accepted
+**Context:** A powerful, modular, hardened admin panel + web auth/dashboard was needed; the admin module
+previously ran on the in-memory dev `stores`, not the real DB.
+**Decision:**
+- **Authorization, three layers** (`rbac.ts`): built-in system roles (owner/admin/moderator/user),
+  admin-defined **custom roles** (DB `roles`), and per-user **grants** (DB `user_grants`, allow/deny) =
+  *delegation*. Effective = role perms ∪ allow − deny; **owner is omnipotent and unlockable**.
+  `requirePermission` checks the computed effective-permission list attached by `resolveUser` (per request).
+- **Persistence** behind a swappable **`AdminRepo`** (Drizzle + in-memory), mirroring `ChatRepo`, so the full
+  authorization path is tested without a DB. The admin module was migrated off `stores` onto it.
+- **better-auth owns credentials:** user creation = `signUpEmail` (server) then set role/flags; new
+  `status` + `mustChangePassword` are `input:false` additionalFields. Self-service `POST /api/me/password`
+  proxies better-auth then clears the flag. Create-user is a seam (`method: password|invite|ldap` — only
+  `password` now; others 501) so SMTP-invite/LDAP drop in later.
+- **Bootstrap** (`db/bootstrap.ts`, after `drizzle-kit migrate` in `server.ts`): upsert built-in roles each
+  boot; seed the owner from `ADMIN_EMAIL`/`ADMIN_PASSWORD` **only if no owner exists** → changing it in the
+  panel makes the env inert.
+- **Hardening:** anti-privilege-escalation (can't assign a role / delegate a permission beyond your own;
+  only owner touches owner/admin), last-owner + self-suspend protection, suspended ⇒ **zero permissions**,
+  every mutation audit-logged, secrets never client-side. Edge brute-force/rate-limiting is the VPS's job
+  (Traefik + CrowdSec) plus better-auth's built-in auth rate limit; admin routes are RBAC-gated + SameSite.
+- **Web** (`apps/web/src/features/admin/*`): a section **registry** (Users/Roles/Flags/Audit) — adding a
+  feature = one entry — each gated by a permission read from `/api/me`; plus a dashboard + change-password.
+**Status:** Accepted. Verified: 9 admin vitest (RBAC, delegation end-to-end, anti-escalation, owner
+protection, custom roles, flags/audit) + typecheck + web build. DB-backed bits (bootstrap, user creation,
+password change) verified live (no Docker here). Migration `0002`.
+
 ---
 
 # Conventions
@@ -212,4 +239,5 @@ against (2026-06-01):
 - [x] **CH-1 chat foundation** — better-auth (email+password + **passkeys**) on Drizzle/Postgres, cookie sessions + RBAC role; web login/passkey UI + TanStack Router. Typecheck/build clean, 6 API tests; live DB/passkey verified on-machine (no Docker in CI sandbox).
 - [x] **CH-2 realtime transport** — `ws` gateway (session-authed upgrade) + chat schema (conversations/members/messages/presence) behind a swappable `ChatRepo`; message relay + delivered + typing + read receipts + presence. Server stores **opaque ciphertext** only. **9 API tests** incl. an in-process 2-client WS integration test (no Docker). Shared wire protocol in `@chatforge/types`.
 - [x] **CH-3 MLS end-to-end** — real `MlsProvider` over **ts-mls 1.6.2** (`MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`) behind a bytes-only, stateless seam (ADR-0020): `generateKeyPackage`/`createGroup`/`startDm`/`addMember`/`joinGroup`/`encrypt`/`decrypt`, group state persisted via `encode/decodeGroupState`. Server adds `key_packages` + `mls_welcomes` (public-only) + REST under `/api/chat` (publish/claim KeyPackage, relay/ack Welcome) on the swappable `ChatRepo`; committed migration `0001_flawless_madrox.sql`. **Verified here (no Docker):** crypto vitest (2-member group, both-way exchange, reload-from-bytes, foreign-ciphertext reject) + api vitest (REST bootstrap + a real MLS message over the CH-2 gateway; DB stores only ciphertext). **crypto 7 + api 11 tests** green; web builds clean.
+- [x] **Admin console + RBAC delegation (ADR-0021)** — env-bootstrap owner (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, first-run only); built-in roles + **custom roles** + per-user **grants** (allow/deny delegation) behind a swappable `AdminRepo` (Drizzle + in-memory); hardened (anti-escalation, last-owner/self-suspend protection, suspended⇒no perms, full audit). Admin module migrated off `stores` to the real DB. Modular web console (`features/admin/*` registry: Users/Roles/Flags/Audit) + dashboard + change-password; `/api/me` drives permission-gated UI; `mustChangePassword` flow + `method:password|invite|ldap` seam. Migration `0002`. **9 admin tests** (incl. delegation end-to-end) + typecheck + web build green; DB-backed bootstrap/creation/password verified live.
 - [ ] Next: **CH-4** chat UI (`apps/web/src/features/chat/`: ConversationList/NewChat/Thread/Composer; MLS in a worker; group state in IndexedDB via vault; decrypted `Message` reuses `RichText`/`ChatPreview`) → **CH-5** encrypted attachments. Also pending: api-client codegen, Meta/Discord importers.

@@ -12,6 +12,9 @@ export const user = pgTable('user', {
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
   role: text('role').notNull().default('user'),
+  // RBAC/admin additionalFields (declared input:false in auth.ts so users can't self-set them).
+  status: text('status').notNull().default('active'), // 'active' | 'suspended'
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

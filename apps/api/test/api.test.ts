@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { MemoryAdminRepo } from '../src/admin/memoryRepo';
+import { setAdminRepo } from '../src/admin/repo';
 import { createApp } from '../src/app';
 
+setAdminRepo(new MemoryAdminRepo()); // resolveUser computes permissions via this repo (no DB)
 const app = createApp();
 
 async function post(path: string, body: unknown, token?: string): Promise<Response> {

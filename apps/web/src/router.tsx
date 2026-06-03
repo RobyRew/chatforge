@@ -1,7 +1,10 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanstack/react-router';
+import { AdminPage } from './features/admin/AdminPage';
 import { AccountPage } from './features/auth/AccountPage';
+import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { Converter } from './features/converter/Converter';
+import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useSession } from './lib/authClient';
 
 const navLink = 'text-zinc-300 transition hover:text-white [&.active]:text-sky-400';
@@ -23,6 +26,11 @@ function Shell() {
             <Link to="/chat" className={navLink}>
               Chat
             </Link>
+            {data && (
+              <Link to="/dashboard" className={navLink}>
+                Dashboard
+              </Link>
+            )}
             <Link to="/account" className={navLink}>
               {data ? data.user.email : 'Sign in'}
             </Link>
@@ -40,8 +48,11 @@ const rootRoute = createRootRoute({ component: Shell });
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: Converter });
 const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: ChatPage });
 const accountRoute = createRoute({ getParentRoute: () => rootRoute, path: '/account', component: AccountPage });
+const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/dashboard', component: DashboardPage });
+const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminPage });
+const changePasswordRoute = createRoute({ getParentRoute: () => rootRoute, path: '/change-password', component: ChangePasswordPage });
 
-const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute, dashboardRoute, adminRoute, changePasswordRoute]);
 
 export const router = createRouter({ routeTree });
 

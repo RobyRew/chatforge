@@ -10,6 +10,9 @@ export interface Env {
   rpID: string;
   /** Passkey/WebAuthn origin (scheme + host[:port], no trailing slash) — the web app's URL. */
   passkeyOrigin: string;
+  /** First-run bootstrap owner (seeded only if no owner exists; inert once one does). */
+  adminEmail?: string;
+  adminPassword?: string;
 }
 
 export function loadEnv(): Env {
@@ -23,5 +26,7 @@ export function loadEnv(): Env {
     passkeyOrigin: process.env.PASSKEY_ORIGIN ?? process.env.CORS_ORIGIN ?? 'http://localhost:4321',
   };
   if (process.env.DATABASE_URL) env.databaseUrl = process.env.DATABASE_URL;
+  if (process.env.ADMIN_EMAIL) env.adminEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
+  if (process.env.ADMIN_PASSWORD) env.adminPassword = process.env.ADMIN_PASSWORD;
   return env;
 }

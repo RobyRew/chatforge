@@ -4,6 +4,8 @@ import type { ClientFrame, ServerFrame } from '@chatforge/types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { createMlsProvider } from '@chatforge/crypto/mls';
+import { MemoryAdminRepo } from '../src/admin/memoryRepo';
+import { setAdminRepo } from '../src/admin/repo';
 import { createApp } from '../src/app';
 import { createChatGateway } from '../src/chat/gateway';
 import { MemoryChatRepo } from '../src/chat/memoryRepo';
@@ -11,6 +13,7 @@ import { setChatRepo } from '../src/chat/repo';
 
 const repo = new MemoryChatRepo();
 setChatRepo(repo); // the REST chat module reads this singleton
+setAdminRepo(new MemoryAdminRepo()); // resolveUser computes permissions via this repo (no DB)
 
 const A = 'u_owner'; // bearer 'owner-token' (seeded role: owner)
 const B = 'u_user'; // bearer 'user-token' (seeded role: user)

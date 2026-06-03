@@ -1,18 +1,30 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { hasPermission, isRole, type Permission, type Role } from './rbac';
+import { getAdminRepo } from './admin/repo';
+import { PERMISSIONS, systemRolePermissions, type Permission } from './rbac';
 import { stores } from './stores';
 
-/** The authenticated user available to every handler. */
+/** The authenticated user available to every handler, with computed effective permissions. */
 export interface SessionUser {
   id: string;
   email: string;
-  role: Role;
+  role: string;
+  status: 'active' | 'suspended';
+  mustChangePassword: boolean;
+  permissions: Permission[];
 }
 
 export type Vars = { Variables: { user?: SessionUser } };
 
-function roleOf(u: { role?: unknown }): Role {
-  return isRole(u.role) ? u.role : 'user';
+/** Owner is omnipotent and never lockable; everyone else = role permissions + grants (DB), with a
+ *  role-only fallback if the DB is unreachable. Suspended users get no permissions. */
+async function resolvePermissions(userId: string, role: string, status: 'active' | 'suspended'): Promise<Permission[]> {
+  if (status === 'suspended') return [];
+  if (role === 'owner') return [...PERMISSIONS];
+  try {
+    return await getAdminRepo().effectivePermissionsFor(userId, role);
+  } catch {
+    return systemRolePermissions(role);
+  }
 }
 
 /** Baseline security response headers applied to every route. */
@@ -27,11 +39,13 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
 };
 
 /**
- * Resolve the current user from the better-auth session cookie. A dev-only bearer fallback
- * (in-memory stores) is kept for the existing converter API tests; it only runs when there is
- * no session cookie, so tests never touch the database.
+ * Resolve the current user from the better-auth session cookie (role/status/mustChangePassword come
+ * from the session). A dev-only bearer fallback (in-memory stores) is kept for the converter/chat
+ * API tests; it only runs when there is no session cookie, so tests never touch the database.
  */
 export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
+  let base: { id: string; email: string; role: string; status: 'active' | 'suspended'; mustChangePassword: boolean } | undefined;
+
   const cookie = c.req.header('cookie');
   if (cookie && cookie.includes('better-auth')) {
     try {
@@ -39,24 +53,56 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
       const { auth } = await import('./auth');
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
       if (session?.user) {
-        c.set('user', { id: session.user.id, email: session.user.email, role: roleOf(session.user) });
+        const u = session.user as { id: string; email: string; role?: unknown; status?: unknown; mustChangePassword?: unknown };
+        base = {
+          id: u.id,
+          email: u.email,
+          role: typeof u.role === 'string' ? u.role : 'user',
+          status: u.status === 'suspended' ? 'suspended' : 'active',
+          mustChangePassword: u.mustChangePassword === true,
+        };
       }
     } catch {
       // DB unavailable or no valid session — fall through.
     }
   }
 
-  if (!c.get('user') && process.env.NODE_ENV !== 'production') {
+  if (!base && process.env.NODE_ENV !== 'production') {
     const authz = c.req.header('Authorization');
     if (authz?.startsWith('Bearer ')) {
       const uid = stores.sessions.get(authz.slice(7));
-      const u = uid ? stores.users.get(uid) : undefined;
-      if (u && u.status === 'active') c.set('user', { id: u.id, email: u.email, role: u.role });
+      if (uid) {
+        // Prefer the AdminRepo so role/status/grant changes reflect; fall back to the seed stores.
+        const au = await getAdminRepo().getUser(uid).catch(() => null);
+        if (au) {
+          base = { id: au.id, email: au.email, role: au.role, status: au.status, mustChangePassword: au.mustChangePassword };
+        } else {
+          const u = stores.users.get(uid);
+          if (u) base = { id: u.id, email: u.email, role: u.role, status: u.status, mustChangePassword: false };
+        }
+      }
     }
+  }
+
+  if (base) {
+    const permissions = await resolvePermissions(base.id, base.role, base.status);
+    c.set('user', {
+      id: base.id,
+      email: base.email,
+      role: base.role,
+      status: base.status,
+      mustChangePassword: base.mustChangePassword,
+      permissions,
+    });
   }
 
   await next();
 };
+
+/** True if the (effective) session user holds a permission. */
+export function userCan(user: SessionUser | undefined, perm: Permission): boolean {
+  return !!user && user.permissions.includes(perm);
+}
 
 export function requireAuth(): MiddlewareHandler<Vars> {
   return async (c: Context<Vars>, next: Next) => {
@@ -69,7 +115,7 @@ export function requirePermission(perm: Permission): MiddlewareHandler<Vars> {
   return async (c: Context<Vars>, next: Next) => {
     const user = c.get('user');
     if (!user) return c.json({ error: 'unauthorized' }, 401);
-    if (!hasPermission(user.role, perm)) return c.json({ error: 'forbidden', need: perm }, 403);
+    if (!user.permissions.includes(perm)) return c.json({ error: 'forbidden', need: perm }, 403);
     await next();
   };
 }

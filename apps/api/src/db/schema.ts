@@ -116,6 +116,34 @@ export const keyPackages = pgTable(
   (t) => ({ byUser: index('key_packages_user_idx').on(t.userId) }),
 );
 
+// ── RBAC ── custom roles + per-user permission grants (delegation). ──
+
+/** Roles, system + custom. `permissions` is an array of Permission names (see rbac.ts). */
+export const roles = pgTable('roles', {
+  name: text('name').primaryKey(),
+  label: text('label').notNull(),
+  description: text('description').notNull().default(''),
+  permissions: jsonb('permissions').$type<string[]>().notNull().default([]),
+  isSystem: boolean('is_system').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+/** Per-user grants: allow/deny a single permission on top of the user's role (delegation). */
+export const userGrants = pgTable(
+  'user_grants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    permission: text('permission').notNull(),
+    effect: text('effect').notNull().default('allow'), // 'allow' | 'deny'
+    grantedBy: text('granted_by'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({ uqUserPerm: unique('user_grants_user_perm').on(t.userId, t.permission) }),
+);
+
 /** Relayed MLS Welcomes — the server forwards opaque `mls_welcome` bytes from inviter to invitee. */
 export const mlsWelcomes = pgTable(
   'mls_welcomes',
