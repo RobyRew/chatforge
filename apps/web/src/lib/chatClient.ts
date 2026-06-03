@@ -1,5 +1,5 @@
 import type { ChatMessageDTO, ClientFrame, ConversationSummary, ServerFrame } from '@chatforge/types';
-import { api } from './api';
+import { ApiError, api } from './api';
 import { getMessages, putMessage } from './chatDb';
 import { chatWorker } from './chatWorkerClient';
 
@@ -144,15 +144,29 @@ class ChatClient {
   async newChat(email: string): Promise<string | null> {
     const normalized = email.trim().toLowerCase();
     if (!normalized) return null;
-    const { conversationId, created } = await api.chat.createDm({ email: normalized });
-    if (created) {
-      const claim = await api.chat.claimKeyPackage({ email: normalized });
-      const { welcome } = await chatWorker.startDm(conversationId, claim.keyPackage);
-      await api.chat.relayWelcome(conversationId, claim.userId, welcome);
-    }
+    const { conversationId } = await api.chat.createDm({ email: normalized });
+    await this.ensureGroup(conversationId, normalized);
     await this.refreshConversations();
     await this.loadHistory(conversationId);
     return conversationId;
+  }
+
+  /** Ensure we hold MLS group state: join a pending Welcome if there is one, otherwise initiate. */
+  private async ensureGroup(conversationId: string, peerEmail: string): Promise<void> {
+    if ((await chatWorker.hasGroup(conversationId)).has) return;
+    await this.processWelcomes();
+    if ((await chatWorker.hasGroup(conversationId)).has) return;
+    let claim: { userId: string; keyPackage: string };
+    try {
+      claim = await api.chat.claimKeyPackage({ email: peerEmail });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        throw new Error(`${peerEmail} hasn't opened Chat yet (no encryption keys published). Ask them to open the Chat page once, then try again.`);
+      }
+      throw e;
+    }
+    const { welcome } = await chatWorker.startDm(conversationId, claim.keyPackage);
+    await api.chat.relayWelcome(conversationId, claim.userId, welcome);
   }
 
   async sendMessage(conversationId: string, text: string): Promise<void> {

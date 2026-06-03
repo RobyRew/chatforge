@@ -9,6 +9,17 @@ import { loadEnv } from './env';
 const env = loadEnv();
 const app = createApp();
 
+// Safety net: log unexpected async errors instead of letting them crash the process (which would
+// drop every live WebSocket). The chat gateway also guards its own handlers.
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('unhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('uncaughtException:', err);
+});
+
 // Seed built-in roles + the env-defined owner (first run only). Runs after `drizzle-kit migrate`.
 void bootstrap();
 

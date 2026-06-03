@@ -29,6 +29,7 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
   const registry = new Map<string, Set<WebSocket>>();
   const userIdOf = new WeakMap<WebSocket, string>();
   const buckets = new WeakMap<WebSocket, { tokens: number; last: number }>();
+  const isAlive = new WeakMap<WebSocket, boolean>();
 
   /** Token-bucket rate limit per socket; returns false when the caller is sending too fast. */
   const allow = (ws: WebSocket): boolean => {
@@ -57,7 +58,30 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
   };
 
+  // Heartbeat: ping every 30s and reap sockets that didn't pong — keeps connections alive through
+  // proxies (Traefik/nginx idle timeouts) and cleans up dead ones.
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (isAlive.get(ws) === false) {
+        ws.terminate();
+        continue;
+      }
+      isAlive.set(ws, false);
+      try {
+        ws.ping();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, 30000);
+  wss.on('close', () => clearInterval(heartbeat));
+
   wss.on('connection', (ws, req) => {
+    isAlive.set(ws, true);
+    ws.on('pong', () => isAlive.set(ws, true));
+    ws.on('error', () => {
+      /* swallow socket errors — never let them bubble to an unhandled rejection */
+    });
     void (async () => {
       let userId: string | null = null;
       try {
@@ -90,8 +114,12 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
       set.add(ws);
       userIdOf.set(ws, uid);
 
-      await repo.setLastSeen(uid);
-      for (const peer of await repo.conversationPeers(uid)) sendTo(peer, { t: 'presence', userId: uid, online: true });
+      try {
+        await repo.setLastSeen(uid);
+        for (const peer of await repo.conversationPeers(uid)) sendTo(peer, { t: 'presence', userId: uid, online: true });
+      } catch {
+        /* presence is best-effort — never tear down the socket over it */
+      }
 
       ws.on('message', (raw) => {
         void (async () => {
@@ -154,15 +182,19 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
 
       ws.on('close', () => {
         void (async () => {
-          const set2 = registry.get(uid);
-          set2?.delete(ws);
-          if (set2 && set2.size === 0) registry.delete(uid);
-          if (!online(uid)) {
-            await repo.setLastSeen(uid);
-            const lastSeenAt = (await repo.getLastSeen(uid)) ?? Date.now();
-            for (const peer of await repo.conversationPeers(uid)) {
-              sendTo(peer, { t: 'presence', userId: uid, online: false, lastSeenAt });
+          try {
+            const set2 = registry.get(uid);
+            set2?.delete(ws);
+            if (set2 && set2.size === 0) registry.delete(uid);
+            if (!online(uid)) {
+              await repo.setLastSeen(uid);
+              const lastSeenAt = (await repo.getLastSeen(uid)) ?? Date.now();
+              for (const peer of await repo.conversationPeers(uid)) {
+                sendTo(peer, { t: 'presence', userId: uid, online: false, lastSeenAt });
+              }
             }
+          } catch {
+            /* best-effort cleanup */
           }
         })();
       });
