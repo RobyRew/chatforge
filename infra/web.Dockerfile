@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json .npmrc ./
 COPY packages ./packages
 COPY apps/web ./apps/web
-RUN npm install --no-audit --no-fund --no-package-lock
+# --include=dev so the build toolchain (vite, tailwind, tsc) installs even if the build host
+# defaults NODE_ENV=production.
+RUN npm install --include=dev --no-audit --no-fund --no-package-lock
 RUN npm run build --workspace @chatforge/web
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
