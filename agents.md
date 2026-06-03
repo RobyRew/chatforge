@@ -152,6 +152,30 @@ better-auth's `better-call` lists zod@^4 as an optional peer while the monorepo 
 `@hono/zod-openapi`). `.npmrc` sets `legacy-peer-deps=true` so they coexist; the `@better-auth/*` peers are
 installed explicitly. App tsconfigs set `declaration:false` (avoids TS2742 from the non-portable zod-v4 type).
 
+## ADR-0020 — MLS realized: ts-mls behind a bytes-only, stateless `MlsProvider` (2026-06-03) · Accepted
+**Context:** CH-3 wires real E2E. ADR-0018 chose `ts-mls`; this records the *realized* seam.
+**Decision:** `packages/crypto/src/mls.ts` exposes `MlsProvider` where **every value crossing the seam is a
+`Uint8Array`** (KeyPackages, group state, Welcomes, ciphertext). The provider is **stateless across calls**
+(holds only the ciphersuite impl); the caller persists the returned group-state bytes (sealed via the vault →
+IndexedDB) and relays the public bytes over the CH-2 transport unchanged. `createMlsProvider()` resolves
+`getCiphersuiteImpl(getCiphersuiteFromName('MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519'))` (ts-mls **1.6.2**,
+suite ID 1 — only `@hpke/core`, no `@noble`). Group state persists via `encode/decodeGroupState` (the
+non-serializable `clientConfig` is reattached from `defaultClientConfig`); the private KeyPackage is
+length-prefix-packed (ts-mls has no wire encoder for it). `startDm` = `createGroup` + `createCommit(add,
+{ ratchetTreeExtension:true })` so the **Welcome is self-contained** (the joiner needs no external ratchet
+tree). MLS is exposed via a **libsodium-free subpath** `@chatforge/crypto/mls` (only imports `ts-mls`), so
+consumers — and the api test — pull MLS without the sodium stack/alias.
+**Server:** `key_packages` + `mls_welcomes` tables (public artifacts only) + REST under `/api/chat`
+(publish/count/claim KeyPackage, relay/list/ack Welcome) on the swappable `ChatRepo`. KeyPackages are
+single-use (claim consumes one, `FOR UPDATE SKIP LOCKED`). The CH-2 WS gateway relays the opaque ciphertext
+unchanged — MLS just produces it.
+**Rationale:** bytes-only keeps all ts-mls types inside `@chatforge/crypto` (swappable for an audited
+mls-rs/WASM impl per ADR-0018), makes client-side encrypted persistence trivial, and preserves the
+zero-knowledge server (ADR-0001).
+**Status:** Accepted. Verified by a crypto vitest (2-member group, bidirectional exchange, reload-from-bytes,
+foreign-ciphertext rejection) + an api vitest (REST bootstrap + a real MLS message relayed over the gateway;
+DB holds only ciphertext). `ts-mls` remains **unaudited** (ADR-0018 caveat stands).
+
 ---
 
 # Conventions
@@ -180,11 +204,12 @@ against (2026-06-01):
 - [x] M0 monorepo scaffold + this log
 - [x] M1 core engine — WhatsApp/Telegram importers, 5 exporters, registry, fidelity report (8/8 tests, strict-clean)
 - [x] M2 web converter UI — client-only SPA, builds clean (worker bundles the engine)
-- [x] M3 crypto — Argon2id + XChaCha20 seal/open + BIP39 recovery (4/4 tests); MLS stubbed
+- [x] M3 crypto — Argon2id + XChaCha20 seal/open + BIP39 recovery (4/4 tests); MLS stubbed (realized in CH-3)
 - [x] M4 api — Hono + RBAC admin + opt-in server-side conversion sandbox + OpenAPI (smoke-tested); better-auth + Drizzle wiring next
 - [x] M7 infra — Dockerfiles (web→nginx-unprivileged, api→node:22), nginx CSP, docker-compose (pg/minio/mailpit), Dokploy notes
 - [x] Validated against **real exports** — WhatsApp DM+group, Telegram supergroup/channel/DM (JSON). Message count, text & attachments preserved 1:1 across conversions (incl. a 690-msg supergroup); formatting degrades only per-format and is reported. Telegram **HTML** export (no `result.json`) is not supported — export as JSON. 19 core tests.
 - [x] **Details editor + live preview** — import → edit (rename chatters, title/type, date-range filter, drop/redact messages) → export, with a live chat-bubble preview (hover a message to remove/restore). Worker split into import/export actions; pure `applyEdits` transform in core. 25 core tests; web builds clean (+~9 KB bundle).
 - [x] **CH-1 chat foundation** — better-auth (email+password + **passkeys**) on Drizzle/Postgres, cookie sessions + RBAC role; web login/passkey UI + TanStack Router. Typecheck/build clean, 6 API tests; live DB/passkey verified on-machine (no Docker in CI sandbox).
 - [x] **CH-2 realtime transport** — `ws` gateway (session-authed upgrade) + chat schema (conversations/members/messages/presence) behind a swappable `ChatRepo`; message relay + delivered + typing + read receipts + presence. Server stores **opaque ciphertext** only. **9 API tests** incl. an in-process 2-client WS integration test (no Docker). Shared wire protocol in `@chatforge/types`.
-- [ ] Next: **CH-3** MLS E2E (`ts-mls` behind `MlsProvider`; key packages + welcomes; client encrypts the ciphertext CH-2 relays) → **CH-4** chat UI → **CH-5** encrypted attachments. Also pending: api-client codegen, Meta/Discord importers.
+- [x] **CH-3 MLS end-to-end** — real `MlsProvider` over **ts-mls 1.6.2** (`MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`) behind a bytes-only, stateless seam (ADR-0020): `generateKeyPackage`/`createGroup`/`startDm`/`addMember`/`joinGroup`/`encrypt`/`decrypt`, group state persisted via `encode/decodeGroupState`. Server adds `key_packages` + `mls_welcomes` (public-only) + REST under `/api/chat` (publish/claim KeyPackage, relay/ack Welcome) on the swappable `ChatRepo`; committed migration `0001_flawless_madrox.sql`. **Verified here (no Docker):** crypto vitest (2-member group, both-way exchange, reload-from-bytes, foreign-ciphertext reject) + api vitest (REST bootstrap + a real MLS message over the CH-2 gateway; DB stores only ciphertext). **crypto 7 + api 11 tests** green; web builds clean.
+- [ ] Next: **CH-4** chat UI (`apps/web/src/features/chat/`: ConversationList/NewChat/Thread/Composer; MLS in a worker; group state in IndexedDB via vault; decrypted `Message` reuses `RichText`/`ChatPreview`) → **CH-5** encrypted attachments. Also pending: api-client codegen, Meta/Discord importers.

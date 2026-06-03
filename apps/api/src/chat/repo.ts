@@ -1,7 +1,7 @@
-import type { ChatMessageDTO, ConversationSummary } from '@chatforge/types';
-import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { getDb } from '../db';
-import { chatConversations, chatMembers, chatMessages, userPresence } from '../db/schema';
+import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, userPresence } from '../db/schema';
 
 /**
  * Persistence boundary for chat. Bodies are opaque base64 `ciphertext` — the server never reads
@@ -19,6 +19,19 @@ export interface ChatRepo {
   setLastRead(conversationId: string, userId: string, seq: number): Promise<void>;
   setLastSeen(userId: string): Promise<void>;
   getLastSeen(userId: string): Promise<number | null>;
+  // ── CH-3 MLS public artifacts (ciphertext/public-only) ──
+  /** Publish a device's public KeyPackages so peers can claim one to start a DM. */
+  publishKeyPackages(userId: string, deviceId: string, packages: string[]): Promise<void>;
+  /** Claim and consume one of a user's KeyPackages (single-use, for forward secrecy). */
+  claimKeyPackage(userId: string): Promise<string | null>;
+  /** How many unclaimed KeyPackages the user has left (so a client knows when to replenish). */
+  countKeyPackages(userId: string): Promise<number>;
+  /** Relay an MLS Welcome to a recipient. */
+  storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }>;
+  /** List the Welcomes waiting for a recipient. */
+  listWelcomes(recipientId: string): Promise<WelcomeDTO[]>;
+  /** Acknowledge (delete) a processed Welcome. */
+  deleteWelcome(id: string, recipientId: string): Promise<void>;
 }
 
 export class DrizzleChatRepo implements ChatRepo {
@@ -143,6 +156,60 @@ export class DrizzleChatRepo implements ChatRepo {
   async getLastSeen(userId: string): Promise<number | null> {
     const rows = await this.db.select().from(userPresence).where(eq(userPresence.userId, userId)).limit(1);
     return rows[0] ? rows[0].lastSeenAt.getTime() : null;
+  }
+
+  async publishKeyPackages(userId: string, deviceId: string, packages: string[]): Promise<void> {
+    if (!packages.length) return;
+    await this.db.insert(keyPackages).values(packages.map((keyPackage) => ({ userId, deviceId, keyPackage })));
+  }
+
+  async claimKeyPackage(userId: string): Promise<string | null> {
+    return this.db.transaction(async (tx) => {
+      // Lock + skip-locked so concurrent claims hand out distinct packages rather than the same one.
+      const rows = await tx
+        .select({ id: keyPackages.id, kp: keyPackages.keyPackage })
+        .from(keyPackages)
+        .where(eq(keyPackages.userId, userId))
+        .orderBy(asc(keyPackages.createdAt))
+        .limit(1)
+        .for('update', { skipLocked: true });
+      const row = rows[0];
+      if (!row) return null;
+      await tx.delete(keyPackages).where(eq(keyPackages.id, row.id));
+      return row.kp;
+    });
+  }
+
+  async countKeyPackages(userId: string): Promise<number> {
+    const agg = await this.db.select({ n: sql<number>`count(*)::int` }).from(keyPackages).where(eq(keyPackages.userId, userId));
+    return agg[0]?.n ?? 0;
+  }
+
+  async storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }> {
+    const rows = await this.db
+      .insert(mlsWelcomes)
+      .values({ conversationId, recipientId, senderId, welcome })
+      .returning({ id: mlsWelcomes.id });
+    return { id: rows[0]!.id };
+  }
+
+  async listWelcomes(recipientId: string): Promise<WelcomeDTO[]> {
+    const rows = await this.db
+      .select()
+      .from(mlsWelcomes)
+      .where(eq(mlsWelcomes.recipientId, recipientId))
+      .orderBy(asc(mlsWelcomes.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      conversationId: r.conversationId,
+      senderId: r.senderId,
+      welcome: r.welcome,
+      createdAt: r.createdAt.getTime(),
+    }));
+  }
+
+  async deleteWelcome(id: string, recipientId: string): Promise<void> {
+    await this.db.delete(mlsWelcomes).where(and(eq(mlsWelcomes.id, id), eq(mlsWelcomes.recipientId, recipientId)));
   }
 }
 

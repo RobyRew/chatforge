@@ -9,7 +9,8 @@
     "types": ["node"],
     "paths": {
       "@chatforge/core": ["../../packages/core/src/index.ts"],
-      "@chatforge/types": ["../../packages/types/src/index.ts"]
+      "@chatforge/types": ["../../packages/types/src/index.ts"],
+      "@chatforge/crypto/mls": ["../../packages/crypto/src/mls.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts"]

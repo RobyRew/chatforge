@@ -39,3 +39,12 @@ export interface ChatMessageDTO {
   ciphertext: string;
   createdAt: number;
 }
+
+/** A relayed MLS Welcome addressed to a recipient (CH-3). `welcome` is opaque base64 `mls_welcome`. */
+export interface WelcomeDTO {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  welcome: string;
+  createdAt: number;
+}

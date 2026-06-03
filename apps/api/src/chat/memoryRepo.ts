@@ -1,4 +1,4 @@
-import type { ChatMessageDTO, ConversationSummary } from '@chatforge/types';
+import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 import type { ChatRepo } from './repo';
 
 /** In-memory ChatRepo for tests/dev — lets the WS transport run in-process without Postgres. */
@@ -8,6 +8,8 @@ export class MemoryChatRepo implements ChatRepo {
   private msgs = new Map<string, ChatMessageDTO[]>(); // conv -> messages
   private seq = new Map<string, number>(); // conv -> last seq
   private seen = new Map<string, number>(); // user -> lastSeen ms
+  private kps = new Map<string, string[]>(); // userId -> FIFO queue of base64 KeyPackages
+  private welcomes: Array<WelcomeDTO & { recipientId: string }> = [];
   private counter = 0;
 
   private key(conversationId: string, userId: string): string {
@@ -85,5 +87,35 @@ export class MemoryChatRepo implements ChatRepo {
 
   async getLastSeen(userId: string): Promise<number | null> {
     return this.seen.get(userId) ?? null;
+  }
+
+  async publishKeyPackages(userId: string, _deviceId: string, packages: string[]): Promise<void> {
+    const arr = this.kps.get(userId) ?? [];
+    arr.push(...packages);
+    this.kps.set(userId, arr);
+  }
+
+  async claimKeyPackage(userId: string): Promise<string | null> {
+    return this.kps.get(userId)?.shift() ?? null;
+  }
+
+  async countKeyPackages(userId: string): Promise<number> {
+    return this.kps.get(userId)?.length ?? 0;
+  }
+
+  async storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }> {
+    const id = `wel_${++this.counter}`;
+    this.welcomes.push({ id, conversationId, recipientId, senderId, welcome, createdAt: Date.now() });
+    return { id };
+  }
+
+  async listWelcomes(recipientId: string): Promise<WelcomeDTO[]> {
+    return this.welcomes
+      .filter((w) => w.recipientId === recipientId)
+      .map((w) => ({ id: w.id, conversationId: w.conversationId, senderId: w.senderId, welcome: w.welcome, createdAt: w.createdAt }));
+  }
+
+  async deleteWelcome(id: string, recipientId: string): Promise<void> {
+    this.welcomes = this.welcomes.filter((w) => !(w.id === id && w.recipientId === recipientId));
   }
 }

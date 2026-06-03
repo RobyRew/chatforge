@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema';
 
 /**
@@ -97,3 +97,41 @@ export const userPresence = pgTable('user_presence', {
     .references(() => user.id, { onDelete: 'cascade' }),
   lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
 });
+
+// ── Chat E2E (CH-3) ── MLS *public* artifacts only: published KeyPackages + relayed Welcomes.
+// The server never sees private keys or group secrets; message bodies stay opaque in chat_messages.
+
+/** Public MLS KeyPackages, published per device; claimed (and consumed) one-per-DM to bootstrap E2E. */
+export const keyPackages = pgTable(
+  'key_packages',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id').notNull(),
+    keyPackage: text('key_package').notNull(), // base64 wire-encoded public KeyPackage
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({ byUser: index('key_packages_user_idx').on(t.userId) }),
+);
+
+/** Relayed MLS Welcomes — the server forwards opaque `mls_welcome` bytes from inviter to invitee. */
+export const mlsWelcomes = pgTable(
+  'mls_welcomes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => chatConversations.id, { onDelete: 'cascade' }),
+    recipientId: text('recipient_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    senderId: text('sender_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    welcome: text('welcome').notNull(), // base64 wire-encoded mls_welcome
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({ byRecipient: index('mls_welcomes_recipient_idx').on(t.recipientId) }),
+);

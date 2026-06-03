@@ -15,6 +15,9 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     environment: 'node',
+    // Argon2id (MODERATE op/mem limits) derivations take seconds each; under parallel `turbo run`
+    // load they can blow past the 5s default. Give the crypto suite generous headroom.
+    testTimeout: 30000,
     server: { deps: { inline: ['libsodium-wrappers-sumo', 'libsodium-sumo'] } },
   },
 });

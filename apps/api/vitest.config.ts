@@ -8,6 +8,8 @@ export default defineConfig({
     alias: {
       '@chatforge/core': r('../../packages/core/src/index.ts'),
       '@chatforge/types': r('../../packages/types/src/index.ts'),
+      // CH-3: import the MLS provider only (libsodium-free subpath — no sodium alias needed here).
+      '@chatforge/crypto/mls': r('../../packages/crypto/src/mls.ts'),
     },
   },
   test: {

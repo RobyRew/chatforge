@@ -33,8 +33,8 @@ expose **only the web service** to the internet.
    - `BETTER_AUTH_URL` = `https://chat.<domain>`  ·  `CORS_ORIGIN` = `https://chat.<domain>`
    - `PASSKEY_RPID` = `chat.<domain>`  ·  `PASSKEY_ORIGIN` = `https://chat.<domain>`
    - `POSTGRES_PASSWORD` (+ matching `DATABASE_URL`), `MINIO_ROOT_PASSWORD` — set real secrets.
-4. **Deploy.** On boot the API runs `drizzle-kit migrate` (creates all 13 tables) then starts. The
-   web SPA build needs no `VITE_API_URL` (same-origin).
+4. **Deploy.** On boot the API runs `drizzle-kit migrate` (creates all 15 tables — incl. CH-3
+   `key_packages` + `mls_welcomes`) then starts. The web SPA build needs no `VITE_API_URL` (same-origin).
 
 That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 
