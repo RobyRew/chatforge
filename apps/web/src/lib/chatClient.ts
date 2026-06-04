@@ -141,27 +141,30 @@ class ChatClient {
     }
   }
 
-  async newChat(email: string): Promise<string | null> {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) return null;
-    const { conversationId } = await api.chat.createDm({ email: normalized });
-    await this.ensureGroup(conversationId, normalized);
+  /** Start (or open) a DM by email or @username. */
+  async newChat(handle: string): Promise<string | null> {
+    const raw = handle.trim();
+    if (!raw) return null;
+    const value = raw.replace(/^@/, '').toLowerCase();
+    const target = value.includes('@') ? { email: value } : { username: value };
+    const { conversationId } = await api.chat.createDm(target);
+    await this.ensureGroup(conversationId, target, value);
     await this.refreshConversations();
     await this.loadHistory(conversationId);
     return conversationId;
   }
 
   /** Ensure we hold MLS group state: join a pending Welcome if there is one, otherwise initiate. */
-  private async ensureGroup(conversationId: string, peerEmail: string): Promise<void> {
+  private async ensureGroup(conversationId: string, target: { email?: string; username?: string }, label: string): Promise<void> {
     if ((await chatWorker.hasGroup(conversationId)).has) return;
     await this.processWelcomes();
     if ((await chatWorker.hasGroup(conversationId)).has) return;
     let claim: { userId: string; keyPackage: string };
     try {
-      claim = await api.chat.claimKeyPackage({ email: peerEmail });
+      claim = await api.chat.claimKeyPackage(target);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        throw new Error(`${peerEmail} hasn't opened Chat yet (no encryption keys published). Ask them to open the Chat page once, then try again.`);
+        throw new Error(`${label} hasn't opened Chat yet (no encryption keys published). Ask them to open the Chat page once, then try again.`);
       }
       throw e;
     }

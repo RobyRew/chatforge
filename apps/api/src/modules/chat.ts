@@ -13,11 +13,27 @@ async function userIdByEmail(email: string): Promise<string | undefined> {
   return rows[0]?.id;
 }
 
+async function userIdByUsername(username: string): Promise<string | undefined> {
+  const { getDb } = await import('../db');
+  const { user } = await import('../db/schema');
+  const { eq } = await import('drizzle-orm');
+  const rows = await getDb().select({ id: user.id }).from(user).where(eq(user.username, username)).limit(1);
+  return rows[0]?.id;
+}
+
+/** Resolve a peer by userId, email, or @username (in that order). */
+async function resolvePeerId(body: { userId?: string; email?: string; username?: string }): Promise<string | undefined> {
+  if (body.userId) return body.userId;
+  if (body.email) return userIdByEmail(body.email.trim().toLowerCase());
+  if (body.username) return userIdByUsername(body.username.trim().toLowerCase().replace(/^@/, ''));
+  return undefined;
+}
+
 chatModule.post('/conversations', requirePermission('chat:use'), async (c) => {
   const me = c.get('user')!;
-  const body = (await c.req.json().catch(() => ({}))) as { userId?: string; email?: string };
-  const peerId = body.userId ?? (body.email ? await userIdByEmail(body.email) : undefined);
-  if (!peerId) return c.json({ error: 'userId or email required' }, 400);
+  const body = (await c.req.json().catch(() => ({}))) as { userId?: string; email?: string; username?: string };
+  const peerId = await resolvePeerId(body);
+  if (!peerId) return c.json({ error: 'userId, email or username required' }, 400);
   if (peerId === me.id) return c.json({ error: 'cannot start a conversation with yourself' }, 400);
   const dm = await getChatRepo().createDm(me.id, peerId);
   return c.json({ conversationId: dm.id, created: dm.created });
@@ -66,9 +82,9 @@ chatModule.get('/keypackages', requirePermission('chat:use'), async (c) => {
 
 /** Claim (and consume) one of a peer's KeyPackages to bootstrap a DM with them. */
 chatModule.post('/keypackages/claim', requirePermission('chat:use'), async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { userId?: string; email?: string };
-  const peerId = body.userId ?? (body.email ? await userIdByEmail(body.email) : undefined);
-  if (!peerId) return c.json({ error: 'userId or email required' }, 400);
+  const body = (await c.req.json().catch(() => ({}))) as { userId?: string; email?: string; username?: string };
+  const peerId = await resolvePeerId(body);
+  if (!peerId) return c.json({ error: 'userId, email or username required' }, 400);
   const keyPackage = await getChatRepo().claimKeyPackage(peerId);
   if (!keyPackage) return c.json({ error: 'no key package available for that user' }, 409);
   return c.json({ userId: peerId, keyPackage });

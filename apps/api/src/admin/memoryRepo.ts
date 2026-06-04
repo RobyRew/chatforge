@@ -26,8 +26,8 @@ export class MemoryAdminRepo implements AdminRepo {
     for (const r of BUILTIN_ROLES) this.roleDefs.set(r.name, { ...r, permissions: [...r.permissions] });
     if (seed) {
       const now = Date.now();
-      this.users.set('u_owner', { id: 'u_owner', email: 'owner@chatforge.local', name: 'Owner', role: 'owner', status: 'active', mustChangePassword: false, createdAt: now });
-      this.users.set('u_user', { id: 'u_user', email: 'user@chatforge.local', name: 'User', role: 'user', status: 'active', mustChangePassword: false, createdAt: now });
+      this.users.set('u_owner', { id: 'u_owner', email: 'owner@chatforge.local', name: 'Owner', username: 'owner', role: 'owner', status: 'active', mustChangePassword: false, createdAt: now });
+      this.users.set('u_user', { id: 'u_user', email: 'user@chatforge.local', name: 'User', username: 'user', role: 'user', status: 'active', mustChangePassword: false, createdAt: now });
       this.flags.set('server-side-conversion', true);
       this.flags.set('chat', false);
       this.flags.set('registration', true);

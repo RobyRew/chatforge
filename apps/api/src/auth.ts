@@ -21,7 +21,8 @@ export function createAuth(db: DB = getDb()) {
     emailAndPassword: { enabled: true, requireEmailVerification: false },
     user: {
       additionalFields: {
-        // input:false → clients can never self-assign these; only the admin API / bootstrap set them.
+        // input:false → clients can never self-assign these; only the admin/profile API + bootstrap set them.
+        username: { type: 'string', required: false, input: false }, // set via /api/me/profile (validated + unique)
         role: { type: 'string', required: false, defaultValue: 'user', input: false },
         status: { type: 'string', required: false, defaultValue: 'active', input: false },
         mustChangePassword: { type: 'boolean', required: false, defaultValue: false, input: false },

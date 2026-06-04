@@ -7,6 +7,8 @@ import { stores } from './stores';
 export interface SessionUser {
   id: string;
   email: string;
+  name: string;
+  username: string | null;
   role: string;
   status: 'active' | 'suspended';
   mustChangePassword: boolean;
@@ -44,7 +46,9 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
  * API tests; it only runs when there is no session cookie, so tests never touch the database.
  */
 export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
-  let base: { id: string; email: string; role: string; status: 'active' | 'suspended'; mustChangePassword: boolean } | undefined;
+  let base:
+    | { id: string; email: string; name: string; username: string | null; role: string; status: 'active' | 'suspended'; mustChangePassword: boolean }
+    | undefined;
 
   const cookie = c.req.header('cookie');
   if (cookie && cookie.includes('better-auth')) {
@@ -53,10 +57,20 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
       const { auth } = await import('./auth');
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
       if (session?.user) {
-        const u = session.user as { id: string; email: string; role?: unknown; status?: unknown; mustChangePassword?: unknown };
+        const u = session.user as {
+          id: string;
+          email: string;
+          name?: unknown;
+          username?: unknown;
+          role?: unknown;
+          status?: unknown;
+          mustChangePassword?: unknown;
+        };
         base = {
           id: u.id,
           email: u.email,
+          name: typeof u.name === 'string' ? u.name : u.email,
+          username: typeof u.username === 'string' ? u.username : null,
           role: typeof u.role === 'string' ? u.role : 'user',
           status: u.status === 'suspended' ? 'suspended' : 'active',
           mustChangePassword: u.mustChangePassword === true,
@@ -75,10 +89,10 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
         // Prefer the AdminRepo so role/status/grant changes reflect; fall back to the seed stores.
         const au = await getAdminRepo().getUser(uid).catch(() => null);
         if (au) {
-          base = { id: au.id, email: au.email, role: au.role, status: au.status, mustChangePassword: au.mustChangePassword };
+          base = { id: au.id, email: au.email, name: au.name, username: au.username, role: au.role, status: au.status, mustChangePassword: au.mustChangePassword };
         } else {
           const u = stores.users.get(uid);
-          if (u) base = { id: u.id, email: u.email, role: u.role, status: u.status, mustChangePassword: false };
+          if (u) base = { id: u.id, email: u.email, name: u.email, username: null, role: u.role, status: u.status, mustChangePassword: false };
         }
       }
     }
@@ -89,6 +103,8 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
     c.set('user', {
       id: base.id,
       email: base.email,
+      name: base.name,
+      username: base.username,
       role: base.role,
       status: base.status,
       mustChangePassword: base.mustChangePassword,

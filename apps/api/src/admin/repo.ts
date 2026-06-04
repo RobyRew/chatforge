@@ -22,6 +22,7 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
+  username: string | null;
   role: string;
   status: 'active' | 'suspended';
   mustChangePassword: boolean;
@@ -102,6 +103,7 @@ export class DrizzleAdminRepo implements AdminRepo {
       id: r.id,
       email: r.email,
       name: r.name,
+      username: r.username ?? null,
       role: r.role,
       status: r.status === 'suspended' ? 'suspended' : 'active',
       mustChangePassword: r.mustChangePassword,

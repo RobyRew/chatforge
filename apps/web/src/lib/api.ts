@@ -47,10 +47,19 @@ export type GrantEffect = 'allow' | 'deny';
 export interface Me {
   id: string;
   email: string;
+  name: string;
+  username: string | null;
   role: string;
   status: 'active' | 'suspended';
   mustChangePassword: boolean;
   permissions: string[];
+}
+export interface Passkey {
+  id: string;
+  name: string | null;
+  deviceType: string;
+  backedUp: boolean;
+  createdAt: number | null;
 }
 export interface AdminUser {
   id: string;
@@ -90,6 +99,10 @@ export const api = {
   me: (): Promise<Me> => get<{ user: Me }>('/api/me').then((r) => r.user),
   changePassword: (currentPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
     post('/api/me/password', { currentPassword, newPassword }),
+  updateProfile: (input: { username?: string; name?: string }): Promise<{ user: { id: string; email: string; name: string; username: string | null } }> =>
+    post('/api/me/profile', input),
+  listPasskeys: (): Promise<Passkey[]> => get<{ passkeys: Passkey[] }>('/api/me/passkeys').then((r) => r.passkeys),
+  deletePasskey: (id: string): Promise<{ ok: boolean }> => del(`/api/me/passkeys/${id}`),
 
   admin: {
     listUsers: (search?: string): Promise<AdminUser[]> =>
@@ -125,7 +138,7 @@ export const api = {
   chat: {
     listConversations: (): Promise<ConversationSummary[]> =>
       get<{ conversations: ConversationSummary[] }>('/api/chat/conversations').then((r) => r.conversations),
-    createDm: (target: { userId?: string; email?: string }): Promise<{ conversationId: string; created: boolean }> =>
+    createDm: (target: { userId?: string; email?: string; username?: string }): Promise<{ conversationId: string; created: boolean }> =>
       post('/api/chat/conversations', target),
     listMessages: (conversationId: string, limit = 100): Promise<ChatMessageDTO[]> =>
       get<{ messages: ChatMessageDTO[] }>(`/api/chat/conversations/${conversationId}/messages?limit=${limit}`).then((r) => r.messages),
@@ -133,7 +146,7 @@ export const api = {
     keyPackageCount: (): Promise<number> => get<{ count: number }>('/api/chat/keypackages').then((r) => r.count),
     publishKeyPackages: (deviceId: string, keyPackages: string[]): Promise<{ published: number }> =>
       post('/api/chat/keypackages', { deviceId, keyPackages }),
-    claimKeyPackage: (target: { userId?: string; email?: string }): Promise<{ userId: string; keyPackage: string }> =>
+    claimKeyPackage: (target: { userId?: string; email?: string; username?: string }): Promise<{ userId: string; keyPackage: string }> =>
       post('/api/chat/keypackages/claim', target),
 
     listWelcomes: (): Promise<WelcomeDTO[]> => get<{ welcomes: WelcomeDTO[] }>('/api/chat/welcomes').then((r) => r.welcomes),

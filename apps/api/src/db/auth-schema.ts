@@ -11,6 +11,7 @@ export const user = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
+  username: text('username').unique(), // unique handle (nullable until the user picks one)
   role: text('role').notNull().default('user'),
   // RBAC/admin additionalFields (declared input:false in auth.ts so users can't self-set them).
   status: text('status').notNull().default('active'), // 'active' | 'suspended'

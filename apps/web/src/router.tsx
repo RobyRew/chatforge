@@ -6,6 +6,7 @@ import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { Converter } from './features/converter/Converter';
 import { DashboardPage } from './features/dashboard/DashboardPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 import { useSession } from './lib/authClient';
 import { useMe } from './lib/useMe';
 
