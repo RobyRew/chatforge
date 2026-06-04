@@ -21,20 +21,30 @@ export const ClientFrameSchema = z.discriminatedUnion('t', [
   }),
   z.object({ t: z.literal('typing'), conversationId: convId }),
   z.object({ t: z.literal('read'), conversationId: convId, seq: z.number().int().nonnegative().max(2_000_000_000) }),
+  z.object({ t: z.literal('active'), away: z.boolean() }), // client-reported idle/away state
 ]);
 export type ClientFrame = z.infer<typeof ClientFrameSchema>;
+
+export type PresenceState = 'online' | 'away' | 'offline';
 
 export type ServerFrame =
   | { t: 'message'; conversationId: string; id: string; senderId: string; seq: number; ciphertext: string; createdAt: number }
   | { t: 'delivered'; conversationId: string; clientId: string; seq: number }
   | { t: 'typing'; conversationId: string; userId: string }
-  | { t: 'presence'; userId: string; online: boolean; lastSeenAt?: number }
+  | { t: 'presence'; userId: string; online: boolean; state?: PresenceState; lastSeenAt?: number }
   | { t: 'read'; conversationId: string; userId: string; seq: number }
+  // Live profile/status update fanned out to a user's conversation peers (server-known metadata).
+  | { t: 'profile'; userId: string; name?: string | null; username?: string | null; email?: string; image?: string | null; statusEmoji?: string | null; statusText?: string | null }
   | { t: 'error'; message: string };
 
 export interface ConversationPeer {
   id: string;
   email: string;
+  name?: string | null;
+  username?: string | null;
+  image?: string | null;
+  statusEmoji?: string | null;
+  statusText?: string | null;
 }
 
 export interface ConversationSummary {

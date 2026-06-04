@@ -43,6 +43,13 @@
       "when": 1780582082082,
       "tag": "0005_last_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780599443024,
+      "tag": "0006_sturdy_skaar",
+      "breakpoints": true
     }
   ]
 }

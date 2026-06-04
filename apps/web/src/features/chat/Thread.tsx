@@ -2,6 +2,8 @@ import type { ConversationSummary } from '@chatforge/types';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { chatClient, type ChatState, type UiMessage } from '../../lib/chatClient';
 import type { ReplyRef } from '../../lib/chatPayload';
+import { peerLabel } from '../../lib/displayPref';
+import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { ContextMenu, useLongPress } from './ContextMenu';
 
@@ -9,8 +11,9 @@ const QUICK_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export function Thread({ conversation, state, myId }: { conversation: ConversationSummary; state: ChatState; myId: string }): ReactNode {
   const messages = state.messages[conversation.id] ?? [];
-  const peer = conversation.peers[0];
-  const presence = peer ? state.presence[peer.id] : undefined;
+  const base = conversation.peers[0];
+  const peer = base ? { ...base, ...state.profiles[base.id] } : undefined;
+  const presence = base ? state.presence[base.id] : undefined;
   const typing = !!state.typing[conversation.id];
   const peerRead = state.peerRead[conversation.id] ?? 0;
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -39,12 +42,13 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
 
   return (
     <div className="flex h-[72vh] flex-col rounded-xl border border-zinc-800 bg-zinc-900/40">
-      <header className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-3">
-        <span className={`h-2 w-2 rounded-full ${presence?.online ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+      <header className="flex flex-wrap items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+        <Avatar image={peer?.image} label={peer ? peerLabel(peer) : '?'} size={36} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-zinc-100">{peer?.email ?? 'Unknown'}</p>
-          <p className="text-xs text-zinc-500">
-            {presence?.online ? 'online' : presence?.lastSeenAt ? `last seen ${new Date(presence.lastSeenAt).toLocaleString()}` : 'offline'}
+          <p className="truncate text-sm font-medium text-zinc-100">{peer ? peerLabel(peer) : 'Unknown'}</p>
+          <p className="truncate text-xs text-zinc-500">
+            {presence?.state === 'away' ? 'away' : presence?.online ? 'online' : presence?.lastSeenAt ? `last seen ${new Date(presence.lastSeenAt).toLocaleString()}` : 'offline'}
+            {(peer?.statusEmoji || peer?.statusText) && ` · ${peer?.statusEmoji ?? ''} ${peer?.statusText ?? ''}`.trimEnd()}
           </p>
         </div>
         <span className="ml-auto whitespace-nowrap text-xs text-zinc-600">🔒 end-to-end encrypted</span>

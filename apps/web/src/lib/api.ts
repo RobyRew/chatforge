@@ -61,6 +61,15 @@ export interface Passkey {
   backedUp: boolean;
   createdAt: number | null;
 }
+export interface Profile {
+  name: string;
+  username: string | null;
+  image: string | null;
+  bio: string | null;
+  about: string | null;
+  statusEmoji: string | null;
+  statusText: string | null;
+}
 export interface VaultItem {
   id: string;
   label: string;
@@ -111,7 +120,8 @@ export const api = {
   me: (): Promise<Me> => get<{ user: Me }>('/api/me').then((r) => r.user),
   changePassword: (currentPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
     post('/api/me/password', { currentPassword, newPassword }),
-  updateProfile: (input: { username?: string; name?: string }): Promise<{ user: { id: string; email: string; name: string; username: string | null } }> =>
+  getProfile: (): Promise<Profile | null> => get<{ profile: Profile | null }>('/api/me/profile').then((r) => r.profile),
+  updateProfile: (input: Partial<Omit<Profile, 'name'>> & { name?: string }): Promise<{ user: { id: string; email: string; name: string; username: string | null } }> =>
     post('/api/me/profile', input),
   listPasskeys: (): Promise<Passkey[]> => get<{ passkeys: Passkey[] }>('/api/me/passkeys').then((r) => r.passkeys),
   deletePasskey: (id: string): Promise<{ ok: boolean }> => del(`/api/me/passkeys/${id}`),

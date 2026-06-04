@@ -1,4 +1,4 @@
-import type { ChatMessageDTO, ClientFrame, ConversationSummary, ServerFrame } from '@chatforge/types';
+import type { ChatMessageDTO, ClientFrame, ConversationPeer, ConversationSummary, PresenceState, ServerFrame } from '@chatforge/types';
 import { ApiError, api } from './api';
 import { getCursor, getMessages, putMessage, setCursor, type StoredMessage } from './chatDb';
 import { encodeMsg, encodeReaction, parsePayload, type ReplyRef } from './chatPayload';
@@ -29,7 +29,8 @@ export interface ChatState {
   error?: string;
   conversations: ConversationSummary[];
   messages: Record<string, UiMessage[]>;
-  presence: Record<string, { online: boolean; lastSeenAt?: number }>;
+  presence: Record<string, { online: boolean; state?: PresenceState; lastSeenAt?: number }>;
+  profiles: Record<string, Partial<ConversationPeer>>; // live overlay over conversation.peers
   typing: Record<string, boolean>;
   peerRead: Record<string, number>;
 }
@@ -49,8 +50,9 @@ class ChatClient {
   private wsTimer: ReturnType<typeof setTimeout> | null = null;
   private typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private listeners = new Set<() => void>();
+  private awaySent = false;
 
-  private state: ChatState = { ready: false, conversations: [], messages: {}, presence: {}, typing: {}, peerRead: {} };
+  private state: ChatState = { ready: false, conversations: [], messages: {}, presence: {}, profiles: {}, typing: {}, peerRead: {} };
 
   subscribe(cb: () => void): () => void {
     this.listeners.add(cb);
@@ -81,6 +83,7 @@ class ChatClient {
       await this.processWelcomes();
       await this.refreshConversations();
       this.connectWs();
+      this.installAway();
       for (const c of this.state.conversations) await this.loadHistory(c.id);
       this.emit({ ready: true });
     } catch (e) {
@@ -291,6 +294,8 @@ class ChatClient {
     this.ws = ws;
     ws.onopen = () => {
       for (const c of this.state.conversations) this.wsSend({ t: 'sub', conversationId: c.id });
+      this.awaySent = false;
+      this.reportActive(document.hidden);
     };
     ws.onmessage = (e) => {
       try {
@@ -309,6 +314,16 @@ class ChatClient {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame));
   }
 
+  /** Report online/away to peers when the tab is hidden/shown. */
+  private installAway(): void {
+    document.addEventListener('visibilitychange', () => this.reportActive(document.hidden));
+  }
+  private reportActive(away: boolean): void {
+    if (away === this.awaySent) return;
+    this.awaySent = away;
+    this.wsSend({ t: 'active', away });
+  }
+
   private handleFrame(f: ServerFrame): void {
     switch (f.t) {
       case 'message':
@@ -321,8 +336,19 @@ class ChatClient {
         this.setTyping(f.conversationId, true);
         break;
       case 'presence':
-        this.emit({ presence: { ...this.state.presence, [f.userId]: { online: f.online, ...(f.lastSeenAt ? { lastSeenAt: f.lastSeenAt } : {}) } } });
+        this.emit({ presence: { ...this.state.presence, [f.userId]: { online: f.online, ...(f.state ? { state: f.state } : {}), ...(f.lastSeenAt ? { lastSeenAt: f.lastSeenAt } : {}) } } });
         break;
+      case 'profile': {
+        const next: Partial<ConversationPeer> = { ...(this.state.profiles[f.userId] ?? {}), id: f.userId };
+        if (f.name !== undefined) next.name = f.name;
+        if (f.username !== undefined) next.username = f.username;
+        if (f.email !== undefined) next.email = f.email;
+        if (f.image !== undefined) next.image = f.image;
+        if (f.statusEmoji !== undefined) next.statusEmoji = f.statusEmoji;
+        if (f.statusText !== undefined) next.statusText = f.statusText;
+        this.emit({ profiles: { ...this.state.profiles, [f.userId]: next } });
+        break;
+      }
       case 'read':
         this.emit({ peerRead: { ...this.state.peerRead, [f.conversationId]: f.seq } });
         break;

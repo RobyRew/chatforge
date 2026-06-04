@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { ClientFrameSchema, type ServerFrame } from '@chatforge/types';
 import { WebSocket, WebSocketServer } from 'ws';
+import { setBroadcaster } from './broadcast';
 import type { ChatRepo } from './repo';
 
 /** Resolve a WS upgrade request to a user id (or null to reject). */
@@ -30,6 +31,7 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
   const userIdOf = new WeakMap<WebSocket, string>();
   const buckets = new WeakMap<WebSocket, { tokens: number; last: number }>();
   const isAlive = new WeakMap<WebSocket, boolean>();
+  const awayState = new Map<string, boolean>(); // userId -> away?
 
   /** Token-bucket rate limit per socket; returns false when the caller is sending too fast. */
   const allow = (ws: WebSocket): boolean => {
@@ -76,6 +78,17 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
   }, 30000);
   wss.on('close', () => clearInterval(heartbeat));
 
+  // Let other modules (e.g. a profile/status change) fan a frame out to a user's conversation peers.
+  setBroadcaster((userId, frame) => {
+    void (async () => {
+      try {
+        for (const peer of await repo.conversationPeers(userId)) sendTo(peer, frame);
+      } catch {
+        /* best-effort */
+      }
+    })();
+  });
+
   wss.on('connection', (ws, req) => {
     isAlive.set(ws, true);
     ws.on('pong', () => isAlive.set(ws, true));
@@ -114,9 +127,10 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
       set.add(ws);
       userIdOf.set(ws, uid);
 
+      awayState.set(uid, false);
       try {
         await repo.setLastSeen(uid);
-        for (const peer of await repo.conversationPeers(uid)) sendTo(peer, { t: 'presence', userId: uid, online: true });
+        for (const peer of await repo.conversationPeers(uid)) sendTo(peer, { t: 'presence', userId: uid, online: true, state: 'online' });
       } catch {
         /* presence is best-effort — never tear down the socket over it */
       }
@@ -141,6 +155,12 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
           }
           const frame = result.data;
           try {
+            if (frame.t === 'active') {
+              // user-scoped (no conversation) — broadcast online/away to all peers
+              awayState.set(uid, frame.away);
+              for (const peer of await repo.conversationPeers(uid)) sendTo(peer, { t: 'presence', userId: uid, online: true, state: frame.away ? 'away' : 'online' });
+              return;
+            }
             if (!(await repo.isMember(frame.conversationId, uid))) {
               send(ws, { t: 'error', message: 'not a member' });
               return;
@@ -189,8 +209,9 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
             if (!online(uid)) {
               await repo.setLastSeen(uid);
               const lastSeenAt = (await repo.getLastSeen(uid)) ?? Date.now();
+              awayState.delete(uid);
               for (const peer of await repo.conversationPeers(uid)) {
-                sendTo(peer, { t: 'presence', userId: uid, online: false, lastSeenAt });
+                sendTo(peer, { t: 'presence', userId: uid, online: false, state: 'offline', lastSeenAt });
               }
             }
           } catch {

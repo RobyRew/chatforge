@@ -13,6 +13,10 @@ export const user = pgTable('user', {
   image: text('image'),
   username: text('username').unique(), // unique handle (nullable until the user picks one)
   vaultSalt: text('vault_salt'), // public PBKDF2 salt for the cross-device vault passphrase (null until enabled)
+  bio: text('bio'),
+  about: text('about'),
+  statusEmoji: text('status_emoji'),
+  statusText: text('status_text'),
   role: text('role').notNull().default('user'),
   // RBAC/admin additionalFields (declared input:false in auth.ts so users can't self-set them).
   status: text('status').notNull().default('active'), // 'active' | 'suspended'

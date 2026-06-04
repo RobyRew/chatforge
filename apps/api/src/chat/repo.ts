@@ -70,7 +70,7 @@ export class DrizzleChatRepo implements ChatRepo {
     const out: ConversationSummary[] = [];
     for (const row of mine) {
       const peers = await this.db
-        .select({ id: user.id, email: user.email })
+        .select({ id: user.id, email: user.email, name: user.name, username: user.username, image: user.image, statusEmoji: user.statusEmoji, statusText: user.statusText })
         .from(chatMembers)
         .innerJoin(user, eq(chatMembers.userId, user.id))
         .where(and(eq(chatMembers.conversationId, row.c), ne(chatMembers.userId, userId)));
