@@ -98,6 +98,25 @@ export const userPresence = pgTable('user_presence', {
   lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
 });
 
+/**
+ * Vault: imported chats a user purposely saved, end-to-end encrypted. The server stores only the
+ * opaque `ciphertext` (a sealed canonical Conversation) + light metadata; it can never read the
+ * content. Optionally `linkedConversationId` ties a saved chat to a live DM.
+ */
+export const vaultConversations = pgTable('vault_conversations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  label: text('label').notNull().default(''),
+  sourcePlatform: text('source_platform'),
+  messageCount: integer('message_count').notNull().default(0),
+  ciphertext: text('ciphertext').notNull(), // base64 sealed canonical Conversation — server can't read it
+  salt: text('salt'), // base64; for passphrase-derived sealing (null when a device key is used)
+  linkedConversationId: uuid('linked_conversation_id').references(() => chatConversations.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // ── Chat E2E (CH-3) ── MLS *public* artifacts only: published KeyPackages + relayed Welcomes.
 // The server never sees private keys or group secrets; message bodies stay opaque in chat_messages.
 

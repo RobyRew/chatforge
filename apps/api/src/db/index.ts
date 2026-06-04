@@ -15,7 +15,9 @@ let cached: DB | undefined;
 export function getDb(): DB {
   if (!cached) {
     const { databaseUrl } = loadEnv();
-    const pool = new Pool(databaseUrl ? { connectionString: databaseUrl } : {});
+    // Cap the pool small — this is a single-instance API on a memory-constrained VPS; each idle
+    // connection also reserves a Postgres backend, so fewer is leaner.
+    const pool = new Pool({ ...(databaseUrl ? { connectionString: databaseUrl } : {}), max: 5 });
     cached = drizzle(pool, { schema });
   }
   return cached;

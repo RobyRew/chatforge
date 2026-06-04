@@ -7,6 +7,7 @@ import { adminModule } from './modules/admin';
 import { chatModule } from './modules/chat';
 import { conversionsModule } from './modules/conversions';
 import { convertModule } from './modules/convert';
+import { vaultModule } from './modules/vault';
 
 const healthRoute = createRoute({
   method: 'get',
@@ -47,6 +48,7 @@ export function createApp(): OpenAPIHono<Vars> {
   app.route('/api/me', accountModule); // session user, password, profile, passkeys
   app.route('/api/convert', convertModule);
   app.route('/api/conversions', conversionsModule);
+  app.route('/api/vault', vaultModule); // saved imported chats (E2E ciphertext only)
   app.route('/api/admin', adminModule);
   app.route('/api/chat', chatModule);
 
