@@ -9,7 +9,7 @@
  * the server never sees any of it.
  */
 const DB_NAME = 'chatforge-chat';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface StoredBundle {
   id?: number;
@@ -24,6 +24,8 @@ export interface StoredMessage {
   senderId: string;
   text: string;
   ts: number;
+  replyTo?: { seq: number; text: string; senderId: string };
+  reactions?: { emoji: string; by: string[] }[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -40,6 +42,7 @@ function openDb(): Promise<IDBDatabase> {
         const store = db.createObjectStore('messages', { keyPath: 'key' });
         store.createIndex('byConversation', 'conversationId', { unique: false });
       }
+      if (!db.objectStoreNames.contains('cursors')) db.createObjectStore('cursors'); // conversationId -> last processed seq
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'));
@@ -82,3 +85,9 @@ export function getMessages(conversationId: string): Promise<StoredMessage[]> {
       }),
   );
 }
+
+// ── cursors (main thread): highest server `seq` already processed per conversation ──
+export const getCursor = (conversationId: string): Promise<number | undefined> =>
+  tx('cursors', 'readonly', (s) => s.get(conversationId) as IDBRequest<number | undefined>);
+export const setCursor = (conversationId: string, seq: number): Promise<IDBValidKey> =>
+  tx('cursors', 'readwrite', (s) => s.put(seq, conversationId));

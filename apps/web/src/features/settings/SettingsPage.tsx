@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api, type Me, type Passkey } from '../../lib/api';
 import { authClient } from '../../lib/authClient';
 import { useMe } from '../../lib/useMe';
+import { disableNotifications, enableNotifications, notificationsPref } from '../../lib/notifications';
 import { isVaultUnlocked, lockVault, unlockVault, vaultPassphraseEnabled } from '../../lib/vaultCrypto';
 import { ui } from '../admin/ui';
 
@@ -26,6 +27,7 @@ export function SettingsPage(): ReactNode {
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
       <h1 className="text-xl font-semibold">Settings</h1>
       <ProfileCard me={me} onSaved={refresh} />
+      <NotificationsCard />
       <PasskeysCard />
       <VaultPassphraseCard />
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">
@@ -159,6 +161,35 @@ function PasskeysCard(): ReactNode {
         </ul>
       )}
       {error && <p className="text-sm text-rose-300">{error}</p>}
+    </section>
+  );
+}
+
+function NotificationsCard(): ReactNode {
+  const [on, setOn] = useState(notificationsPref());
+  const [busy, setBusy] = useState(false);
+  const toggle = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      if (on) {
+        disableNotifications();
+        setOn(false);
+      } else {
+        setOn(await enableNotifications());
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <div>
+        <h3 className="text-sm font-semibold text-zinc-200">Browser notifications</h3>
+        <p className="text-xs text-zinc-500">Get notified of new messages when ChatForge isn’t focused.</p>
+      </div>
+      <button className={`${ui.btn} ${on ? ui.ghost : ui.primary}`} disabled={busy} onClick={() => void toggle()}>
+        {on ? 'Turn off' : 'Turn on'}
+      </button>
     </section>
   );
 }

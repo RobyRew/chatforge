@@ -61,7 +61,7 @@ function ChatApp({ me }: { me: Me }): ReactNode {
           {activeVaultId ? (
             <VaultView id={activeVaultId} conversations={state.conversations} onChanged={() => undefined} />
           ) : active ? (
-            <Thread conversation={active} state={state} />
+            <Thread conversation={active} state={state} myId={me.id} />
           ) : (
             <div className="grid h-[72vh] place-items-center rounded-xl border border-zinc-800 bg-zinc-900/40 text-sm text-zinc-500">
               Select or start a conversation.

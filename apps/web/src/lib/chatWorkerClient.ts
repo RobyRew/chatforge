@@ -34,8 +34,8 @@ export const chatWorker = {
   join: (conversationId: string, welcome: string): Promise<{ joined: boolean }> =>
     call({ id: rid(), type: 'join', conversationId, welcome }),
   hasGroup: (conversationId: string): Promise<{ has: boolean }> => call({ id: rid(), type: 'hasGroup', conversationId }),
-  encrypt: (conversationId: string, text: string): Promise<{ ciphertext: string }> =>
-    call({ id: rid(), type: 'encrypt', conversationId, text }),
+  encrypt: (conversationId: string, payload: string): Promise<{ ciphertext: string }> =>
+    call({ id: rid(), type: 'encrypt', conversationId, payload }),
   decrypt: (conversationId: string, ciphertext: string): Promise<DecryptResult> =>
     call({ id: rid(), type: 'decrypt', conversationId, ciphertext }),
 };

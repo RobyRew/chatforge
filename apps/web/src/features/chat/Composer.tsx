@@ -1,15 +1,17 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { chatClient } from '../../lib/chatClient';
+import type { ReplyRef } from '../../lib/chatPayload';
 
-export function Composer({ conversationId }: { conversationId: string }): ReactNode {
+export function Composer({ conversationId, replyTo, onClearReply }: { conversationId: string; replyTo: ReplyRef | null; onClearReply: () => void }): ReactNode {
   const [text, setText] = useState('');
   const lastTyping = useRef(0);
 
   const send = (): void => {
     const body = text.trim();
     if (!body) return;
-    void chatClient.sendMessage(conversationId, body);
+    void chatClient.sendMessage(conversationId, body, replyTo ?? undefined);
     setText('');
+    onClearReply();
   };
 
   const onChange = (value: string): void => {
@@ -22,27 +24,33 @@ export function Composer({ conversationId }: { conversationId: string }): ReactN
   };
 
   return (
-    <div className="flex items-end gap-2 border-t border-zinc-800 p-3">
-      <textarea
-        className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500"
-        rows={1}
-        placeholder="Type a message…"
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            send();
-          }
-        }}
-      />
-      <button
-        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
-        disabled={!text.trim()}
-        onClick={send}
-      >
-        Send
-      </button>
+    <div className="border-t border-zinc-800">
+      {replyTo && (
+        <div className="flex items-center gap-2 px-3 pt-2 text-xs text-zinc-400">
+          <span className="min-w-0 truncate border-l-2 border-sky-500 pl-2">Replying: {replyTo.text.slice(0, 60)}</span>
+          <button onClick={onClearReply} className="ml-auto shrink-0 text-zinc-500 hover:text-white">
+            ✕
+          </button>
+        </div>
+      )}
+      <div className="flex items-end gap-2 p-3">
+        <textarea
+          className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500"
+          rows={1}
+          placeholder="Type a message…"
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        <button className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40" disabled={!text.trim()} onClick={send}>
+          Send
+        </button>
+      </div>
     </div>
   );
 }

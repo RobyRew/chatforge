@@ -1,7 +1,14 @@
 import type { ChatMessageDTO, ClientFrame, ConversationSummary, ServerFrame } from '@chatforge/types';
 import { ApiError, api } from './api';
-import { getMessages, putMessage } from './chatDb';
+import { getCursor, getMessages, putMessage, setCursor, type StoredMessage } from './chatDb';
+import { encodeMsg, encodeReaction, parsePayload, type ReplyRef } from './chatPayload';
 import { chatWorker } from './chatWorkerClient';
+import { notify } from './notifications';
+
+export interface Reaction {
+  emoji: string;
+  by: string[];
+}
 
 /** A message as shown in the UI (decrypted plaintext; `seq` is null until the server confirms). */
 export interface UiMessage {
@@ -13,6 +20,8 @@ export interface UiMessage {
   seq: number | null;
   pending: boolean;
   mine: boolean;
+  replyTo?: ReplyRef;
+  reactions?: Reaction[];
 }
 
 export interface ChatState {
@@ -30,7 +39,8 @@ const KEY_PACKAGE_TARGET = 5;
 /**
  * Orchestrates E2E chat on the main thread: drives the MLS worker, the WebSocket, and the REST
  * endpoints, and exposes a subscribable snapshot for React. Plaintext only ever exists here and in
- * the worker — the server sees opaque ciphertext.
+ * the worker — the server sees opaque ciphertext. Replies/reactions ride inside the encrypted payload
+ * and reference messages by `seq` (the stable per-conversation id both peers share).
  */
 class ChatClient {
   private me: { id: string; email: string } | null = null;
@@ -62,7 +72,6 @@ class ChatClient {
     this.me = me;
     try {
       await chatWorker.init(me.id);
-      // Top the server-side KeyPackage pool up to the target so peers can always start a DM with us.
       const serverCount = await api.chat.keyPackageCount();
       const need = Math.max(0, KEY_PACKAGE_TARGET - serverCount);
       if (need > 0) {
@@ -104,13 +113,37 @@ class ChatClient {
     }
   }
 
+  private toUi(conversationId: string, m: StoredMessage): UiMessage {
+    return {
+      id: m.key,
+      conversationId,
+      senderId: m.senderId,
+      text: m.text,
+      ts: m.ts,
+      seq: m.seq,
+      pending: false,
+      mine: m.senderId === this.me?.id,
+      ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      ...(m.reactions ? { reactions: m.reactions } : {}),
+    };
+  }
+  private toStored(m: UiMessage): StoredMessage {
+    return {
+      key: `${m.conversationId}:${m.seq}`,
+      conversationId: m.conversationId,
+      seq: m.seq ?? 0,
+      senderId: m.senderId,
+      text: m.text,
+      ts: m.ts,
+      ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      ...(m.reactions ? { reactions: m.reactions } : {}),
+    };
+  }
+
   private async loadHistory(conversationId: string): Promise<void> {
     const stored = await getMessages(conversationId);
-    this.setMessages(
-      conversationId,
-      stored.map((m) => ({ id: m.key, conversationId, senderId: m.senderId, text: m.text, ts: m.ts, seq: m.seq, pending: false, mine: m.senderId === this.me?.id })),
-    );
-    const maxSeq = stored.reduce((acc, m) => Math.max(acc, m.seq), 0);
+    this.setMessages(conversationId, stored.map((m) => this.toUi(conversationId, m)));
+    const cursor = (await getCursor(conversationId)) ?? 0;
     let server: ChatMessageDTO[] = [];
     try {
       server = await api.chat.listMessages(conversationId, 100);
@@ -118,26 +151,41 @@ class ChatClient {
       return;
     }
     for (const m of server) {
-      if (m.seq > maxSeq) await this.ingest(conversationId, m, true);
+      if (m.seq <= cursor) continue;
+      const ok = await this.ingest(conversationId, m, true);
+      if (!ok) break; // a gap → later messages can't decrypt either (preserve ratchet order)
     }
   }
 
-  /** Decrypt + persist + surface an inbound server message. `retry` allows one join-then-retry. */
-  private async ingest(conversationId: string, m: ChatMessageDTO, retry: boolean): Promise<void> {
-    if (m.senderId === this.me?.id) return; // our own sends are confirmed via 'delivered'
+  /** Decrypt + dispatch one inbound server message; advances the cursor. Returns false on failure. */
+  private async ingest(conversationId: string, m: ChatMessageDTO, retry: boolean): Promise<boolean> {
+    if (m.senderId === this.me?.id) {
+      await setCursor(conversationId, m.seq); // our own send — already applied locally
+      return true;
+    }
     try {
       const res = await chatWorker.decrypt(conversationId, m.ciphertext);
-      if (res.kind !== 'application') return;
-      await putMessage({ key: `${conversationId}:${m.seq}`, conversationId, seq: m.seq, senderId: m.senderId, text: res.text, ts: res.ts });
-      this.addMessage(conversationId, { id: m.id, conversationId, senderId: m.senderId, text: res.text, ts: res.ts, seq: m.seq, pending: false, mine: false });
+      if (res.kind === 'application') {
+        const payload = parsePayload(res.plaintext);
+        if (payload.t === 'reaction') {
+          this.applyReaction(conversationId, payload.targetSeq, payload.emoji, m.senderId, payload.remove ?? false);
+        } else {
+          await putMessage({ key: `${conversationId}:${m.seq}`, conversationId, seq: m.seq, senderId: m.senderId, text: payload.text, ts: payload.ts, ...(payload.replyTo ? { replyTo: payload.replyTo } : {}) });
+          this.addMessage(conversationId, { id: m.id, conversationId, senderId: m.senderId, text: payload.text, ts: payload.ts, seq: m.seq, pending: false, mine: false, ...(payload.replyTo ? { replyTo: payload.replyTo } : {}) });
+          const peer = this.state.conversations.find((c) => c.id === conversationId)?.peers.find((p) => p.id === m.senderId);
+          notify(peer?.email ?? 'New message', payload.text);
+        }
+      }
+      await setCursor(conversationId, m.seq);
+      return true;
     } catch (e) {
       if (retry) {
         await this.processWelcomes();
-        await this.ingest(conversationId, m, false);
-        return;
+        return this.ingest(conversationId, m, false);
       }
       // eslint-disable-next-line no-console
       console.warn('chat: decrypt failed', e);
+      return false;
     }
   }
 
@@ -172,17 +220,61 @@ class ChatClient {
     await api.chat.relayWelcome(conversationId, claim.userId, welcome);
   }
 
-  async sendMessage(conversationId: string, text: string): Promise<void> {
+  async sendMessage(conversationId: string, text: string, replyTo?: ReplyRef): Promise<void> {
     const body = text.trim();
     if (!body || !this.me) return;
     const clientId = crypto.randomUUID();
-    this.addMessage(conversationId, { id: clientId, conversationId, senderId: this.me.id, text: body, ts: Date.now(), seq: null, pending: true, mine: true });
+    this.addMessage(conversationId, { id: clientId, conversationId, senderId: this.me.id, text: body, ts: Date.now(), seq: null, pending: true, mine: true, ...(replyTo ? { replyTo } : {}) });
     try {
-      const { ciphertext } = await chatWorker.encrypt(conversationId, body);
+      const { ciphertext } = await chatWorker.encrypt(conversationId, encodeMsg(body, replyTo));
       this.wsSend({ t: 'send', conversationId, ciphertext, clientId });
     } catch (e) {
       this.emit({ error: e instanceof Error ? e.message : String(e) });
     }
+  }
+
+  /** Toggle the current user's reaction on a message (referenced by its `seq`). */
+  async sendReaction(conversationId: string, targetSeq: number, emoji: string): Promise<void> {
+    if (!this.me) return;
+    const target = (this.state.messages[conversationId] ?? []).find((m) => m.seq === targetSeq);
+    if (!target) return;
+    const remove = !!target.reactions?.find((r) => r.emoji === emoji)?.by.includes(this.me.id);
+    this.applyReaction(conversationId, targetSeq, emoji, this.me.id, remove); // optimistic
+    try {
+      const { ciphertext } = await chatWorker.encrypt(conversationId, encodeReaction(targetSeq, emoji, remove));
+      this.wsSend({ t: 'send', conversationId, ciphertext, clientId: crypto.randomUUID() });
+    } catch (e) {
+      this.emit({ error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  private applyReaction(conversationId: string, targetSeq: number, emoji: string, senderId: string, remove: boolean): void {
+    this.updateMessage(conversationId, targetSeq, (m) => {
+      const reactions = (m.reactions ?? []).map((r) => ({ emoji: r.emoji, by: [...r.by] }));
+      let entry = reactions.find((r) => r.emoji === emoji);
+      if (remove) {
+        if (entry) entry.by = entry.by.filter((u) => u !== senderId);
+      } else {
+        if (!entry) {
+          entry = { emoji, by: [] };
+          reactions.push(entry);
+        }
+        if (!entry.by.includes(senderId)) entry.by.push(senderId);
+      }
+      return { ...m, reactions: reactions.filter((r) => r.by.length > 0) };
+    });
+  }
+
+  private updateMessage(conversationId: string, seq: number, updater: (m: UiMessage) => UiMessage): void {
+    const list = this.state.messages[conversationId];
+    if (!list) return;
+    const idx = list.findIndex((m) => m.seq === seq);
+    if (idx === -1) return;
+    const updated = updater(list[idx]!);
+    const next = [...list];
+    next[idx] = updated;
+    this.setMessages(conversationId, next);
+    if (updated.seq !== null) void putMessage(this.toStored(updated));
   }
 
   sendTyping(conversationId: string): void {
@@ -245,12 +337,12 @@ class ChatClient {
     const list = this.state.messages[conversationId];
     if (!list) return;
     const idx = list.findIndex((m) => m.id === clientId);
-    if (idx === -1) return;
-    const msg = list[idx]!;
+    if (idx === -1) return; // not a tracked message (e.g. a reaction send) — ignore
+    const updated = { ...list[idx]!, seq, pending: false };
     const next = [...list];
-    next[idx] = { ...msg, seq, pending: false };
+    next[idx] = updated;
     this.setMessages(conversationId, next);
-    void putMessage({ key: `${conversationId}:${seq}`, conversationId, seq, senderId: msg.senderId, text: msg.text, ts: msg.ts });
+    void putMessage(this.toStored(updated));
   }
 
   private setTyping(conversationId: string, on: boolean): void {

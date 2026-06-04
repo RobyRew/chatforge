@@ -73,7 +73,7 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
     case 'encrypt': {
       const state = await getGroup(req.conversationId);
       if (!state) throw new Error('no group state for conversation');
-      const out = await m.encrypt(state, enc.encode(JSON.stringify({ text: req.text, ts: Date.now() })));
+      const out = await m.encrypt(state, enc.encode(req.payload));
       await putGroup(req.conversationId, out.groupState);
       return { ciphertext: toB64(out.ciphertext) };
     }
@@ -82,10 +82,7 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
       if (!state) throw new Error('no group state for conversation');
       const res = await m.decrypt(state, fromB64(req.ciphertext));
       await putGroup(req.conversationId, res.groupState);
-      if (res.type === 'application') {
-        const obj = JSON.parse(dec.decode(res.plaintext)) as { text: string; ts: number };
-        return { kind: 'application', text: obj.text, ts: obj.ts };
-      }
+      if (res.type === 'application') return { kind: 'application', plaintext: dec.decode(res.plaintext) };
       return { kind: 'handshake' };
     }
   }

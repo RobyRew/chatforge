@@ -9,10 +9,12 @@ export type ChatWorkerRequest =
   | { id: string; type: 'startDm'; conversationId: string; peerKeyPackage: string }
   | { id: string; type: 'join'; conversationId: string; welcome: string }
   | { id: string; type: 'hasGroup'; conversationId: string }
-  | { id: string; type: 'encrypt'; conversationId: string; text: string }
+  | { id: string; type: 'encrypt'; conversationId: string; payload: string }
   | { id: string; type: 'decrypt'; conversationId: string; ciphertext: string };
 
-export type DecryptResult = { kind: 'application'; text: string; ts: number } | { kind: 'handshake' };
+// The worker treats the payload as an opaque string; the structured `ChatPayload` (replies,
+// reactions, attachments) is built/parsed on the main thread (see lib/chatPayload.ts).
+export type DecryptResult = { kind: 'application'; plaintext: string } | { kind: 'handshake' };
 
 export type ChatWorkerResponse =
   | { id: string; ok: true; result: unknown }
