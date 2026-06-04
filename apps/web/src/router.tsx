@@ -42,6 +42,11 @@ function Shell() {
                 Admin
               </Link>
             )}
+            {data && (
+              <Link to="/settings" className={navLink}>
+                Settings
+              </Link>
+            )}
             <Link to="/account" className={navLink}>
               {data ? data.user.email : 'Sign in'}
             </Link>
@@ -62,8 +67,9 @@ const accountRoute = createRoute({ getParentRoute: () => rootRoute, path: '/acco
 const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/dashboard', component: DashboardPage });
 const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminPage });
 const changePasswordRoute = createRoute({ getParentRoute: () => rootRoute, path: '/change-password', component: ChangePasswordPage });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsPage });
 
-const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute, dashboardRoute, adminRoute, changePasswordRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute, dashboardRoute, adminRoute, changePasswordRoute, settingsRoute]);
 
 export const router = createRouter({ routeTree });
 

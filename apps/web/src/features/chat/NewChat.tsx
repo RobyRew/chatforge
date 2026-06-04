@@ -29,8 +29,8 @@ export function NewChat({ onCreated }: { onCreated: (conversationId: string) => 
       <label className="text-xs font-medium text-zinc-400">New conversation</label>
       <input
         className={field}
-        type="email"
-        placeholder="person@email.com"
+        type="text"
+        placeholder="email or @username"
         value={email}
         disabled={busy}
         onChange={(e) => setEmail(e.target.value)}
