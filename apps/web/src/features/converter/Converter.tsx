@@ -13,6 +13,7 @@ import { ChatPreview } from './ChatPreview';
 import { DetailsEditor } from './DetailsEditor';
 import { Dropzone } from './Dropzone';
 import { ReportView } from './ReportView';
+import { SaveToVault } from './SaveToVault';
 import { useConverter, type SourceChoice } from './store';
 
 const field = 'rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100';
@@ -136,6 +137,7 @@ export function Converter() {
             >
               {s.phase === 'exporting' ? 'Converting…' : 'Convert & download'}
             </button>
+            {effective && <SaveToVault conversation={effective} />}
             {s.report && <ReportView report={s.report} />}
             {s.phase === 'error' && s.error && (
               <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">{s.error}</div>

@@ -61,6 +61,18 @@ export interface Passkey {
   backedUp: boolean;
   createdAt: number | null;
 }
+export interface VaultItem {
+  id: string;
+  label: string;
+  sourcePlatform: string | null;
+  messageCount: number;
+  linkedConversationId: string | null;
+  createdAt: number;
+}
+export interface VaultItemFull extends VaultItem {
+  ciphertext: string;
+  salt: string | null;
+}
 export interface AdminUser {
   id: string;
   email: string;
@@ -153,5 +165,15 @@ export const api = {
     relayWelcome: (conversationId: string, recipientId: string, welcome: string): Promise<{ id: string }> =>
       post('/api/chat/welcomes', { conversationId, recipientId, welcome }),
     ackWelcome: (id: string): Promise<{ ok: boolean }> => del(`/api/chat/welcomes/${id}`),
+  },
+
+  vault: {
+    list: (): Promise<VaultItem[]> => get<{ items: VaultItem[] }>('/api/vault').then((r) => r.items),
+    get: (id: string): Promise<VaultItemFull> => get<{ item: VaultItemFull }>(`/api/vault/${id}`).then((r) => r.item),
+    save: (input: { label: string; sourcePlatform: string | null; messageCount: number; ciphertext: string }): Promise<{ id: string }> =>
+      post('/api/vault', input),
+    link: (id: string, conversationId: string | null): Promise<{ id: string; linkedConversationId: string | null }> =>
+      post(`/api/vault/${id}/link`, { conversationId }),
+    remove: (id: string): Promise<{ ok: boolean }> => del(`/api/vault/${id}`),
   },
 };
