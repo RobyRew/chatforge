@@ -36,6 +36,13 @@
       "when": 1780581033986,
       "tag": "0004_secret_kitty_pryde",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780582082082,
+      "tag": "0005_last_jean_grey",
+      "breakpoints": true
     }
   ]
 }

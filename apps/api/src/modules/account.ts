@@ -89,3 +89,30 @@ accountModule.delete('/passkeys/:id', requireAuth(), async (c) => {
   await getDb().delete(passkey).where(and(eq(passkey.id, c.req.param('id')), eq(passkey.userId, me.id)));
   return c.json({ ok: true });
 });
+
+/** Public PBKDF2 salt for the cross-device vault passphrase (null = passphrase mode not enabled). */
+accountModule.get('/vault-salt', requireAuth(), async (c) => {
+  const me = c.get('user')!;
+  const { getDb } = await import('../db');
+  const { user } = await import('../db/schema');
+  const { eq } = await import('drizzle-orm');
+  const rows = await getDb().select({ salt: user.vaultSalt }).from(user).where(eq(user.id, me.id)).limit(1);
+  return c.json({ salt: rows[0]?.salt ?? null });
+});
+
+/** Ensure a vault salt exists (generate once on first passphrase setup); returns the salt. */
+accountModule.post('/vault-salt', requireAuth(), async (c) => {
+  const me = c.get('user')!;
+  const { getDb } = await import('../db');
+  const { user } = await import('../db/schema');
+  const { eq } = await import('drizzle-orm');
+  const db = getDb();
+  const rows = await db.select({ salt: user.vaultSalt }).from(user).where(eq(user.id, me.id)).limit(1);
+  let salt = rows[0]?.salt ?? null;
+  if (!salt) {
+    const { randomBytes } = await import('node:crypto');
+    salt = randomBytes(16).toString('base64');
+    await db.update(user).set({ vaultSalt: salt }).where(eq(user.id, me.id));
+  }
+  return c.json({ salt });
+});

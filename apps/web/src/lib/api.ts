@@ -115,6 +115,8 @@ export const api = {
     post('/api/me/profile', input),
   listPasskeys: (): Promise<Passkey[]> => get<{ passkeys: Passkey[] }>('/api/me/passkeys').then((r) => r.passkeys),
   deletePasskey: (id: string): Promise<{ ok: boolean }> => del(`/api/me/passkeys/${id}`),
+  vaultSalt: (): Promise<string | null> => get<{ salt: string | null }>('/api/me/vault-salt').then((r) => r.salt),
+  ensureVaultSalt: (): Promise<string> => post<{ salt: string }>('/api/me/vault-salt').then((r) => r.salt),
 
   admin: {
     listUsers: (search?: string): Promise<AdminUser[]> =>

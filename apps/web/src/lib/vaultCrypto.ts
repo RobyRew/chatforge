@@ -1,9 +1,13 @@
 /**
- * Device-key encryption for the Vault (ADR: "device key now, passphrase later"). A non-extractable
- * AES-256-GCM key is generated once and kept in IndexedDB — it never leaves this browser, so the
- * server only ever stores ciphertext. (A future passphrase mode will use the `salt` column for
- * cross-device sync via Argon2id.)
+ * Vault encryption. Two modes; the server only ever sees ciphertext either way:
+ *  - **device** — a non-extractable AES-256-GCM key kept in this browser's IndexedDB. Zero prompts,
+ *    but decrypts only on the device that saved it. Envelope tag `d1:` (legacy items have no tag).
+ *  - **passphrase** — an AES-256-GCM key derived from your vault passphrase via PBKDF2-SHA256
+ *    (600k iters) and a per-user salt fetched from the server, cached in memory for the session.
+ *    Works across all your devices. Envelope tag `p1:`.
  */
+import { api } from './api';
+
 const DB_NAME = 'chatforge-vault';
 const STORE = 'keys';
 const KEY_ID = 'device';
@@ -18,7 +22,6 @@ function openDb(): Promise<IDBDatabase> {
     req.onerror = () => reject(req.error ?? new Error('vault keystore open failed'));
   });
 }
-
 function idbGet<T>(db: IDBDatabase, key: string): Promise<T | undefined> {
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
@@ -34,19 +37,18 @@ function idbPut(db: IDBDatabase, key: string, value: unknown): Promise<void> {
   });
 }
 
-let cached: CryptoKey | undefined;
+let cachedDeviceKey: CryptoKey | undefined;
 async function deviceKey(): Promise<CryptoKey> {
-  if (cached) return cached;
+  if (cachedDeviceKey) return cachedDeviceKey;
   const db = await openDb();
   const existing = await idbGet<CryptoKey>(db, KEY_ID);
   if (existing) {
-    cached = existing;
+    cachedDeviceKey = existing;
     return existing;
   }
-  // Non-extractable: the raw bytes can never be read out or exfiltrated, only used to en/decrypt.
   const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   await idbPut(db, KEY_ID, key);
-  cached = key;
+  cachedDeviceKey = key;
   return key;
 }
 
@@ -62,9 +64,37 @@ function fromB64(b: string): Uint8Array {
   return u;
 }
 
-/** Encrypt a JSON-serialisable value → base64 `iv ‖ ciphertext`. */
-export async function vaultEncrypt(value: unknown): Promise<string> {
-  const key = await deviceKey();
+// ── passphrase mode (session-cached) ──
+let passKey: CryptoKey | undefined;
+
+export async function vaultPassphraseEnabled(): Promise<boolean> {
+  return (await api.vaultSalt()) !== null;
+}
+export function isVaultUnlocked(): boolean {
+  return passKey !== undefined;
+}
+export function lockVault(): void {
+  passKey = undefined;
+}
+
+/** Set up (first time) or unlock the passphrase vault for this session. */
+export async function unlockVault(passphrase: string): Promise<void> {
+  if (!passphrase) throw new Error('passphrase required');
+  const salt = new Uint8Array(fromB64(await api.ensureVaultSalt())); // fresh ArrayBuffer-backed (strict BufferSource)
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  passKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 600_000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+// ── AES-GCM core + mode dispatch ──
+export type VaultMode = 'device' | 'passphrase';
+
+async function aesEncrypt(key: CryptoKey, value: unknown): Promise<string> {
   const data = new TextEncoder().encode(JSON.stringify(value));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data));
@@ -73,14 +103,32 @@ export async function vaultEncrypt(value: unknown): Promise<string> {
   out.set(ct, iv.length);
   return toB64(out);
 }
-
-/** Decrypt base64 `iv ‖ ciphertext` produced by {@link vaultEncrypt} on this device. */
-export async function vaultDecrypt<T>(b64: string): Promise<T> {
-  const key = await deviceKey();
+async function aesDecrypt<T>(key: CryptoKey, b64: string): Promise<T> {
   const buf = fromB64(b64);
-  // Copy into fresh ArrayBuffer-backed arrays (satisfies the strict BufferSource type).
   const iv = new Uint8Array(buf.subarray(0, 12));
   const ct = new Uint8Array(buf.subarray(12));
   const data = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct));
   return JSON.parse(new TextDecoder().decode(data)) as T;
+}
+
+export async function vaultEncrypt(value: unknown, mode: VaultMode): Promise<string> {
+  if (mode === 'passphrase') {
+    if (!passKey) throw new Error('vault is locked — unlock it in Settings');
+    return `p1:${await aesEncrypt(passKey, value)}`;
+  }
+  return `d1:${await aesEncrypt(await deviceKey(), value)}`;
+}
+
+export async function vaultDecrypt<T>(envelope: string): Promise<T> {
+  if (envelope.startsWith('p1:')) {
+    if (!passKey) throw new Error('vault is locked — unlock it in Settings');
+    return aesDecrypt<T>(passKey, envelope.slice(3));
+  }
+  const b64 = envelope.startsWith('d1:') ? envelope.slice(3) : envelope; // legacy = raw device
+  return aesDecrypt<T>(await deviceKey(), b64);
+}
+
+/** Which mode an envelope was created with (so the UI can require unlock before opening). */
+export function envelopeMode(envelope: string): VaultMode {
+  return envelope.startsWith('p1:') ? 'passphrase' : 'device';
 }
