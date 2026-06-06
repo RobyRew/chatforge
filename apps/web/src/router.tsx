@@ -2,7 +2,6 @@ import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanst
 import { AdminPage } from './features/admin/AdminPage';
 import { ADMIN_SECTIONS } from './features/admin/registry';
 import { AccountPage } from './features/auth/AccountPage';
-import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { Converter } from './features/converter/Converter';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -66,10 +65,9 @@ const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', 
 const accountRoute = createRoute({ getParentRoute: () => rootRoute, path: '/account', component: AccountPage });
 const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/dashboard', component: DashboardPage });
 const adminRoute = createRoute({ getParentRoute: () => rootRoute, path: '/admin', component: AdminPage });
-const changePasswordRoute = createRoute({ getParentRoute: () => rootRoute, path: '/change-password', component: ChangePasswordPage });
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsPage });
 
-const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute, dashboardRoute, adminRoute, changePasswordRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, chatRoute, accountRoute, dashboardRoute, adminRoute, settingsRoute]);
 
 export const router = createRouter({ routeTree });
 

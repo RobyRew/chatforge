@@ -1,5 +1,7 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { getAdminRepo } from './admin/repo';
+import { SID_COOKIE } from './auth/logto';
 import { PERMISSIONS, systemRolePermissions, type Permission } from './rbac';
 import { stores } from './stores';
 
@@ -16,6 +18,8 @@ export interface SessionUser {
 }
 
 export type Vars = { Variables: { user?: SessionUser } };
+
+type UserBase = Omit<SessionUser, 'permissions'>;
 
 /** Owner is omnipotent and never lockable; everyone else = role permissions + grants (DB), with a
  *  role-only fallback if the DB is unreachable. Suspended users get no permissions. */
@@ -41,52 +45,35 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
 };
 
 /**
- * Resolve the current user from the better-auth session cookie (role/status/mustChangePassword come
- * from the session). A dev-only bearer fallback (in-memory stores) is kept for the converter/chat
- * API tests; it only runs when there is no session cookie, so tests never touch the database.
+ * Resolve the current user from the Logto **session cookie** (`cf_sid`). The cookie maps to a
+ * server-side session (logto_sessions) holding the tokens; we read verified ID-token claims from it
+ * and upsert the local user row (role/status/profile) on first sign-in. A dev-only opaque-bearer
+ * fallback (in-memory stores) is kept for the converter/chat API tests; it only runs outside
+ * production and when there's no session-cookie user, so tests never touch the database. Identity
+ * only — the E2E crypto layer is separate and client-side.
  */
 export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
-  let base:
-    | { id: string; email: string; name: string; username: string | null; role: string; status: 'active' | 'suspended'; mustChangePassword: boolean }
-    | undefined;
+  let base: UserBase | undefined;
 
-  const cookie = c.req.header('cookie');
-  if (cookie && cookie.includes('better-auth')) {
+  // 1) Logto session cookie (production path).
+  const sid = getCookie(c, SID_COOKIE);
+  if (sid) {
     try {
-      // Lazy import keeps better-auth out of test/converter paths that never see a session cookie.
-      const { auth } = await import('./auth');
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      if (session?.user) {
-        const u = session.user as {
-          id: string;
-          email: string;
-          name?: unknown;
-          username?: unknown;
-          role?: unknown;
-          status?: unknown;
-          mustChangePassword?: unknown;
-        };
-        base = {
-          id: u.id,
-          email: u.email,
-          name: typeof u.name === 'string' ? u.name : u.email,
-          username: typeof u.username === 'string' ? u.username : null,
-          role: typeof u.role === 'string' ? u.role : 'user',
-          status: u.status === 'suspended' ? 'suspended' : 'active',
-          mustChangePassword: u.mustChangePassword === true,
-        };
-      }
+      const { sessionClaims, ensureAppUser } = await import('./auth/logto');
+      const claims = await sessionClaims(sid);
+      if (claims) base = await ensureAppUser(claims);
     } catch {
-      // DB unavailable or no valid session — fall through.
+      // Logto/DB unreachable — leave the request unauthenticated (fail closed).
     }
   }
 
+  // 2) Dev-only opaque bearer fallback (tests/converter): only when there's no session-cookie user.
   if (!base && process.env.NODE_ENV !== 'production') {
     const authz = c.req.header('Authorization');
-    if (authz?.startsWith('Bearer ')) {
-      const uid = stores.sessions.get(authz.slice(7));
+    const token = authz?.startsWith('Bearer ') ? authz.slice(7).trim() : null;
+    if (token) {
+      const uid = stores.sessions.get(token);
       if (uid) {
-        // Prefer the AdminRepo so role/status/grant changes reflect; fall back to the seed stores.
         const au = await getAdminRepo().getUser(uid).catch(() => null);
         if (au) {
           base = { id: au.id, email: au.email, name: au.name, username: au.username, role: au.role, status: au.status, mustChangePassword: au.mustChangePassword };
@@ -100,16 +87,7 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
 
   if (base) {
     const permissions = await resolvePermissions(base.id, base.role, base.status);
-    c.set('user', {
-      id: base.id,
-      email: base.email,
-      name: base.name,
-      username: base.username,
-      role: base.role,
-      status: base.status,
-      mustChangePassword: base.mustChangePassword,
-      permissions,
-    });
+    c.set('user', { ...base, permissions });
   }
 
   await next();

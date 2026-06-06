@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import { createApp } from './app';
+import { SID_COOKIE } from './auth/logto';
 import { createChatGateway } from './chat/gateway';
 import { DrizzleChatRepo } from './chat/repo';
 import { bootstrap } from './db/bootstrap';
@@ -32,12 +33,21 @@ createChatGateway({
   server: server as unknown as Server,
   repo: new DrizzleChatRepo(),
   authenticate: async (req) => {
-    const cookie = req.headers.cookie;
-    if (!cookie || !cookie.includes('better-auth')) return null;
-    const { auth } = await import('./auth');
-    const headers = new Headers();
-    headers.set('cookie', cookie);
-    const session = await auth.api.getSession({ headers });
-    return session?.user?.id ?? null;
+    // Same-origin WebSocket → the browser sends the `cf_sid` session cookie on the upgrade request.
+    // Resolve it to verified Logto claims, then to the app user id. No token ever lives in client JS.
+    const cookie = req.headers.cookie ?? '';
+    const sid = cookie
+      .split(';')
+      .map((s) => s.trim())
+      .find((s) => s.startsWith(`${SID_COOKIE}=`))
+      ?.slice(SID_COOKIE.length + 1);
+    if (!sid) return null;
+    try {
+      const { sessionClaims, appUserIdForSub } = await import('./auth/logto');
+      const claims = await sessionClaims(decodeURIComponent(sid));
+      return claims ? await appUserIdForSub(claims.sub) : null;
+    } catch {
+      return null;
+    }
   },
 });

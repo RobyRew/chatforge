@@ -4,6 +4,7 @@ import { loadEnv } from './env';
 import { resolveUser, securityHeaders, type Vars } from './middleware';
 import { accountModule } from './modules/account';
 import { adminModule } from './modules/admin';
+import { authModule } from './modules/auth';
 import { chatModule } from './modules/chat';
 import { conversionsModule } from './modules/conversions';
 import { convertModule } from './modules/convert';
@@ -33,12 +34,10 @@ export function createApp(): OpenAPIHono<Vars> {
   app.use('*', cors({ origin: env.corsOrigin, credentials: true }));
   app.use('*', resolveUser);
 
-  // better-auth (email+password + passkeys) owns everything under /api/auth/*.
-  // Lazy-imported so the converter API + tests don't load the auth stack unless an auth route is hit.
-  app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
-    const { auth } = await import('./auth');
-    return auth.handler(c.req.raw);
-  });
+  // Authentication is delegated to Logto (hosted sign-in UI) via the Traditional Web flow: these
+  // endpoints drive the OIDC redirect dance and own the opaque `cf_sid` session cookie — tokens
+  // stay server-side. See modules/auth.ts + auth/logto.ts.
+  app.route('/api/auth', authModule);
 
   // Container healthcheck (Docker HEALTHCHECK hits :8787/health directly; not exposed via /api).
   app.openapi(healthRoute, (c) => c.json({ ok: true, service: 'chatforge-api', ts: Date.now() }));

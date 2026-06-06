@@ -15,15 +15,11 @@
     "clean": "rm -rf dist .turbo coverage"
   },
   "dependencies": {
-    "@better-auth/core": "^1.6.13",
-    "@better-auth/passkey": "^1.6.13",
-    "@better-auth/utils": "^0.4.1",
     "@chatforge/core": "*",
     "@chatforge/types": "*",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-openapi": "^0.18.3",
-    "better-auth": "^1.6.13",
-    "better-call": "^2.0.3",
+    "@logto/node": "^3.0.0",
     "drizzle-orm": "^0.38.3",
     "hono": "^4.6.16",
     "pg": "^8.13.1",

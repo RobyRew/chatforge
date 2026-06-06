@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, type Me, type Passkey, type Profile } from '../../lib/api';
-import { authClient } from '../../lib/authClient';
+import { api, type Me, type Profile } from '../../lib/api';
 import { getDisplayAs, setDisplayAs, type DisplayAs } from '../../lib/displayPref';
 import { useMe } from '../../lib/useMe';
 import { disableNotifications, enableNotifications, notificationsPref } from '../../lib/notifications';
@@ -31,15 +30,8 @@ export function SettingsPage(): ReactNode {
       <ProfileCard me={me} onSaved={refresh} />
       <DisplayPrefCard />
       <NotificationsCard />
-      <PasskeysCard />
       <VaultPassphraseCard />
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">
-        Password —{' '}
-        <Link to="/change-password" className="text-sky-400 hover:text-sky-300">
-          change your password
-        </Link>
-        .
-      </section>
+      <SecurityCard />
     </div>
   );
 }
@@ -158,77 +150,17 @@ function DisplayPrefCard(): ReactNode {
   );
 }
 
-function PasskeysCard(): ReactNode {
-  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const load = async (): Promise<void> => {
-    try {
-      setPasskeys(await api.listPasskeys());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-  useEffect(() => void load(), []);
-
-  const add = async (): Promise<void> => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const r = (await authClient.passkey.addPasskey()) as { error?: { message?: string } | null } | undefined;
-      if (r?.error) throw new Error(r.error.message ?? 'Could not add passkey');
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const revoke = async (id: string): Promise<void> => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      await api.deletePasskey(id);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function SecurityCard(): ReactNode {
+  // Password, passkeys, social logins and 2FA are all owned by Logto's hosted account UI.
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-200">Passkeys</h3>
-        <button className={`${ui.btn} ${ui.primary}`} disabled={busy} onClick={() => void add()}>
-          Add passkey
-        </button>
-      </div>
-      {passkeys.length === 0 ? (
-        <p className="text-sm text-zinc-500">No passkeys yet. Add one for passwordless sign-in.</p>
-      ) : (
-        <ul className="flex flex-col divide-y divide-zinc-800">
-          {passkeys.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
-              <div className="min-w-0">
-                <span className="text-zinc-100">{p.name || 'Passkey'}</span>
-                <p className="text-xs text-zinc-500">
-                  {p.deviceType}
-                  {p.backedUp ? ' · synced' : ' · device-bound'}
-                  {p.createdAt ? ` · added ${new Date(p.createdAt).toLocaleDateString()}` : ''}
-                </p>
-              </div>
-              <button className={`${ui.btn} ${ui.danger}`} disabled={busy} onClick={() => void revoke(p.id)}>
-                Revoke
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+    <section className="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <h3 className="text-sm font-semibold text-zinc-200">Security</h3>
+      <p className="text-xs text-zinc-500">
+        Your password, passkeys, connected social logins and two-factor authentication are managed in your account.
+      </p>
+      <a className={`${ui.btn} ${ui.primary} self-start`} href="https://auth.robyrew.com" target="_blank" rel="noreferrer">
+        Manage account security
+      </a>
     </section>
   );
 }

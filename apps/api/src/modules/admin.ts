@@ -62,46 +62,15 @@ adminModule.get('/users/:id', requirePermission('users:read'), async (c) => {
   return c.json({ user, role, grants, effectivePermissions });
 });
 
-/** Create a user. v1 supports `method: 'password'` (set an initial password); `invite`/`ldap` are
- *  reserved seams returning 501 until SMTP/an LDAP connector is configured. */
-adminModule.post('/users', requirePermission('users:write'), async (c) => {
-  const a = actor(c);
-  const body = (await c.req.json().catch(() => ({}))) as {
-    email?: string;
-    password?: string;
-    name?: string;
-    role?: string;
-    method?: string;
-    mustChangePassword?: boolean;
-  };
-  const method = body.method ?? 'password';
-  if (method !== 'password') {
-    return c.json({ error: `provisioning method '${method}' is not configured yet`, supported: ['password'] }, 501);
-  }
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return c.json({ error: 'a valid email is required' }, 400);
-  if (typeof body.password !== 'string' || body.password.length < 8) {
-    return c.json({ error: 'password must be at least 8 characters' }, 400);
-  }
-  const role = typeof body.role === 'string' && body.role ? body.role : 'user';
-  const roleErr = await assertCanAssignRole(a, role);
-  if (roleErr) return c.json({ error: roleErr }, 403);
-
-  // Credentials are created by better-auth (correct password hashing); we then set role/flags.
-  try {
-    const { auth } = await import('../auth');
-    const result = await auth.api.signUpEmail({ body: { email, password: body.password, name: body.name?.trim() || email } });
-    const created = (result as { user?: { id?: string } } | null)?.user;
-    if (!created?.id) return c.json({ error: 'failed to create user' }, 500);
-    await repo().setRole(created.id, role);
-    if (body.mustChangePassword !== false) await repo().setMustChangePassword(created.id, true);
-    await repo().log('user:create', a.id, `${email} as ${role}`);
-    return c.json({ user: await repo().getUser(created.id) }, 201);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'failed to create user';
-    return c.json({ error: message }, 409);
-  }
-});
+/** Create a user. Identity is owned by Logto — new login accounts are created in Logto (or via a
+ *  Logto invitation), not here. A local user row appears automatically on first Logto sign-in; this
+ *  console then manages their role/status/grants. Returns 501 to make that explicit. */
+adminModule.post('/users', requirePermission('users:write'), (c) =>
+  c.json(
+    { error: 'create login accounts in Logto; this console manages roles/permissions for users who have signed in', supported: [] as string[] },
+    501,
+  ),
+);
 
 adminModule.post('/users/:id/role', requirePermission('roles:assign'), async (c) => {
   const a = actor(c);

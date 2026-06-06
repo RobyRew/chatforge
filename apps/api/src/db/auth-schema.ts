@@ -1,82 +1,41 @@
-import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 /**
- * better-auth tables (Drizzle). Field *names* must match better-auth's model (the adapter maps
- * by JS property), so keep `emailVerified`, `userId`, `credentialID`, etc. exactly. `role` is our
- * additionalField (see auth.ts). Generated equivalently by `@better-auth/cli generate`.
+ * User identity table. Authentication is delegated to **Logto** (OIDC); we keep a thin local row
+ * keyed by the Logto subject (`logtoSub`). All app data (chat, vault, blobs, RBAC, MLS key packages)
+ * FKs to `user.id`. Profile + RBAC fields (username/role/status/vaultSalt) live here; passwords,
+ * passkeys, social login, and MFA all live in Logto. See docs/auth-logto.md.
+ *
+ * The E2E crypto layer is independent of auth: `vaultSalt` is a public salt the client uses to
+ * derive vault keys from a passphrase/device key — the server never sees the key or plaintext.
  */
 export const user = pgTable('user', {
-  id: text('id').primaryKey(),
+  id: text('id').primaryKey(), // app-side id (uuid)
+  logtoSub: text('logto_sub').notNull().unique(), // Logto subject — the link to identity
+  email: text('email').notNull(),
   name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
   username: text('username').unique(), // unique handle (nullable until the user picks one)
-  vaultSalt: text('vault_salt'), // public PBKDF2 salt for the cross-device vault passphrase (null until enabled)
+  vaultSalt: text('vault_salt'), // public PBKDF2 salt for the E2E vault passphrase (client-managed)
   bio: text('bio'),
   about: text('about'),
   statusEmoji: text('status_emoji'),
   statusText: text('status_text'),
   role: text('role').notNull().default('user'),
-  // RBAC/admin additionalFields (declared input:false in auth.ts so users can't self-set them).
   status: text('status').notNull().default('active'), // 'active' | 'suspended'
-  mustChangePassword: boolean('must_change_password').notNull().default(false),
+  mustChangePassword: boolean('must_change_password').notNull().default(false), // legacy/no-op under Logto
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const session = pgTable('session', {
+/**
+ * Server-side Logto session store (Traditional Web flow). One row per opaque `cf_sid` cookie; the
+ * JSON blob holds the @logto/node client state (PKCE/state during sign-in, then the tokens). The
+ * browser never sees these — only the cookie id. Pruned by TTL on each sign-in. See auth/logto.ts.
+ */
+export const logtoSessions = pgTable('logto_sessions', {
   id: text('id').primaryKey(),
+  data: text('data').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
   expiresAt: timestamp('expires_at').notNull(),
-  token: text('token').notNull().unique(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  ipAddress: text('ip_address'),
-  userAgent: text('user_agent'),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-});
-
-export const account = pgTable('account', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope: text('scope'),
-  password: text('password'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
-
-export const verification = pgTable('verification', {
-  id: text('id').primaryKey(),
-  identifier: text('identifier').notNull(),
-  value: text('value').notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-export const passkey = pgTable('passkey', {
-  id: text('id').primaryKey(),
-  name: text('name'),
-  publicKey: text('public_key').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  credentialID: text('credential_id').notNull(),
-  counter: integer('counter').notNull(),
-  deviceType: text('device_type').notNull(),
-  backedUp: boolean('backed_up').notNull(),
-  transports: text('transports'),
-  aaguid: text('aaguid'),
-  createdAt: timestamp('created_at').defaultNow(),
 });

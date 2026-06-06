@@ -2,12 +2,13 @@ import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, u
 import { user } from './auth-schema';
 
 /**
- * Domain Postgres schema (Drizzle). better-auth owns the auth tables (see ./auth-schema, re-exported
- * below). NO message content is stored here — converted artifacts live as E2E-encrypted blobs in
- * object storage; only metadata + ciphertext references are persisted.
+ * Domain Postgres schema (Drizzle). The `user` identity table lives in ./auth-schema (re-exported
+ * below); authentication is delegated to Logto (OIDC). NO message content is stored here —
+ * converted artifacts live as E2E-encrypted blobs in object storage; only metadata + ciphertext
+ * references are persisted.
  */
 
-// Auth tables (user/session/account/verification/passkey) come from better-auth.
+// `user` identity table (keyed by the Logto subject) comes from ./auth-schema.
 export * from './auth-schema';
 
 export const featureFlags = pgTable('feature_flags', {

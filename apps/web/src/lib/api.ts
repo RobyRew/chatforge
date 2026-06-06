@@ -1,6 +1,6 @@
 /**
  * Typed, same-origin client for the ChatForge API (`/api/*`). Cookies are sent with every request
- * so the better-auth session authenticates the admin endpoints. Errors surface the server's
+ * so the Logto session cookie authenticates the admin endpoints. Errors surface the server's
  * `{ error }` message. The web treats permissions as opaque strings (the API is the source of truth).
  */
 import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
@@ -53,13 +53,6 @@ export interface Me {
   status: 'active' | 'suspended';
   mustChangePassword: boolean;
   permissions: string[];
-}
-export interface Passkey {
-  id: string;
-  name: string | null;
-  deviceType: string;
-  backedUp: boolean;
-  createdAt: number | null;
 }
 export interface Profile {
   name: string;
@@ -118,13 +111,9 @@ export interface UserDetail {
 
 export const api = {
   me: (): Promise<Me> => get<{ user: Me }>('/api/me').then((r) => r.user),
-  changePassword: (currentPassword: string, newPassword: string): Promise<{ ok: boolean }> =>
-    post('/api/me/password', { currentPassword, newPassword }),
   getProfile: (): Promise<Profile | null> => get<{ profile: Profile | null }>('/api/me/profile').then((r) => r.profile),
   updateProfile: (input: Partial<Omit<Profile, 'name'>> & { name?: string }): Promise<{ user: { id: string; email: string; name: string; username: string | null } }> =>
     post('/api/me/profile', input),
-  listPasskeys: (): Promise<Passkey[]> => get<{ passkeys: Passkey[] }>('/api/me/passkeys').then((r) => r.passkeys),
-  deletePasskey: (id: string): Promise<{ ok: boolean }> => del(`/api/me/passkeys/${id}`),
   vaultSalt: (): Promise<string | null> => get<{ salt: string | null }>('/api/me/vault-salt').then((r) => r.salt),
   ensureVaultSalt: (): Promise<string> => post<{ salt: string }>('/api/me/vault-salt').then((r) => r.salt),
 

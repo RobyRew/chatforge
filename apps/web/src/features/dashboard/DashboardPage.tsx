@@ -29,15 +29,6 @@ export function DashboardPage(): ReactNode {
         </p>
       </div>
 
-      {me.mustChangePassword && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-800/60 bg-amber-950/30 p-4 text-sm text-amber-200">
-          <span>You must change your password before continuing.</span>
-          <Link to="/change-password" className={`${ui.btn} ${ui.primary} whitespace-nowrap`}>
-            Change password
-          </Link>
-        </div>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2">
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
           <h3 className="mb-2 text-sm font-semibold text-zinc-200">Your access</h3>
@@ -64,11 +55,11 @@ export function DashboardPage(): ReactNode {
               → Chat
             </Link>
             <Link to="/account" className="text-sky-400 hover:text-sky-300">
-              → Account & passkeys
+              → Account
             </Link>
-            <Link to="/change-password" className="text-sky-400 hover:text-sky-300">
-              → Change password
-            </Link>
+            <a href="https://auth.robyrew.com" target="_blank" rel="noreferrer" className="text-sky-400 hover:text-sky-300">
+              → Manage account security
+            </a>
             {isAdmin && (
               <Link to="/admin" className="font-medium text-amber-300 hover:text-amber-200">
                 → Admin console

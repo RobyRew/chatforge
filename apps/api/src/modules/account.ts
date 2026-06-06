@@ -7,26 +7,8 @@ export const accountModule = new Hono<Vars>();
 /** Current session user + computed effective permissions — the web reads this to drive its UI. */
 accountModule.get('/', requireAuth(), (c) => c.json({ user: c.get('user') }));
 
-/** Self-service password change (also clears the must-change-on-first-login flag on success). */
-accountModule.post('/password', requireAuth(), async (c) => {
-  const me = c.get('user')!;
-  const body = (await c.req.json().catch(() => ({}))) as { currentPassword?: string; newPassword?: string };
-  if (!body.currentPassword || !body.newPassword || body.newPassword.length < 8) {
-    return c.json({ error: 'currentPassword and newPassword (min 8 chars) are required' }, 400);
-  }
-  try {
-    const { auth } = await import('../auth');
-    await auth.api.changePassword({
-      body: { currentPassword: body.currentPassword, newPassword: body.newPassword },
-      headers: c.req.raw.headers,
-    });
-    const { getAdminRepo } = await import('../admin/repo');
-    await getAdminRepo().setMustChangePassword(me.id, false);
-    return c.json({ ok: true });
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : 'password change failed' }, 400);
-  }
-});
+// Passwords, passkeys and MFA are owned by Logto — there are no password/passkey endpoints here
+// anymore. This module keeps profile (handle/name/bio/status) + the public E2E vault salt.
 
 /** Full profile (for the Settings editor). */
 accountModule.get('/profile', requireAuth(), async (c) => {
@@ -92,32 +74,6 @@ accountModule.post('/profile', requireAuth(), async (c) => {
     broadcastToPeers(me.id, { t: 'profile', userId: me.id, name: u.name, username: u.username, email: u.email, image: u.image, statusEmoji: u.statusEmoji, statusText: u.statusText });
   }
   return c.json({ user: u });
-});
-
-/** List the current user's passkeys (for an inventory / revoke UI). */
-accountModule.get('/passkeys', requireAuth(), async (c) => {
-  const me = c.get('user')!;
-  const { getDb } = await import('../db');
-  const { passkey } = await import('../db/schema');
-  const { desc, eq } = await import('drizzle-orm');
-  const rows = await getDb()
-    .select({ id: passkey.id, name: passkey.name, deviceType: passkey.deviceType, backedUp: passkey.backedUp, createdAt: passkey.createdAt })
-    .from(passkey)
-    .where(eq(passkey.userId, me.id))
-    .orderBy(desc(passkey.createdAt));
-  return c.json({
-    passkeys: rows.map((r) => ({ id: r.id, name: r.name, deviceType: r.deviceType, backedUp: r.backedUp, createdAt: r.createdAt ? r.createdAt.getTime() : null })),
-  });
-});
-
-/** Revoke one of the current user's passkeys (ownership enforced). */
-accountModule.delete('/passkeys/:id', requireAuth(), async (c) => {
-  const me = c.get('user')!;
-  const { getDb } = await import('../db');
-  const { passkey } = await import('../db/schema');
-  const { and, eq } = await import('drizzle-orm');
-  await getDb().delete(passkey).where(and(eq(passkey.id, c.req.param('id')), eq(passkey.userId, me.id)));
-  return c.json({ ok: true });
 });
 
 /** Public PBKDF2 salt for the cross-device vault passphrase (null = passphrase mode not enabled). */

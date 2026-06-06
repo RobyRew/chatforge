@@ -4,8 +4,8 @@ import { useSession } from './authClient';
 
 /**
  * Current user + **server-computed** effective permissions (from /api/me). `null` when signed out.
- * Re-fetches whenever the better-auth session changes (login/logout), so permission-gated UI such
- * as the navbar Admin link updates live. The server is always the real gate — this only drives UX.
+ * Re-fetches whenever the session changes (login/logout), so permission-gated UI such as the navbar
+ * Admin link updates live. The server is always the real gate — this only drives UX.
  */
 export function useMe(): { me: Me | null; loading: boolean; refresh: () => Promise<void>; can: (perm: string) => boolean } {
   const { data, isPending } = useSession();
@@ -26,7 +26,7 @@ export function useMe(): { me: Me | null; loading: boolean; refresh: () => Promi
   }, []);
 
   useEffect(() => {
-    if (isPending) return; // wait for better-auth to resolve the session cookie first
+    if (isPending) return; // wait for the session cookie to resolve first
     void refresh();
   }, [sessionId, isPending, refresh]);
 

@@ -114,8 +114,8 @@ describe('admin — custom roles', () => {
   });
 });
 
-describe('admin — flags, audit, user creation guards', () => {
-  it('toggles flags, records audit entries, and validates user creation', async () => {
+describe('admin — flags, audit, user creation (delegated to Logto)', () => {
+  it('toggles flags, records audit entries; user creation is a 501 stub', async () => {
     expect((await req('/api/admin/flags/chat', 'POST', { enabled: true }, USER)).status).toBe(403);
     expect((await req('/api/admin/flags/chat', 'POST', { enabled: true }, OWNER)).status).toBe(200);
 
@@ -124,9 +124,9 @@ describe('admin — flags, audit, user creation guards', () => {
     expect(audit.audit.some((e) => e.action === 'user:role')).toBe(true);
     expect(audit.audit.some((e) => e.action === 'flag:set')).toBe(true);
 
-    // Creation guards (actual creation needs better-auth + a DB and is verified live).
+    // User creation is delegated to Logto (hosted sign-up); the admin endpoint is a 501 stub.
+    // Authorization is still enforced first: a non-privileged user gets 403, an owner gets 501.
     expect((await req('/api/admin/users', 'POST', { email: 'x@y.z', password: 'pw' }, USER)).status).toBe(403);
-    expect((await req('/api/admin/users', 'POST', { email: 'bad', password: 'short' }, OWNER)).status).toBe(400);
-    expect((await req('/api/admin/users', 'POST', { email: 'a@b.co', password: 'longenough', method: 'invite' }, OWNER)).status).toBe(501);
+    expect((await req('/api/admin/users', 'POST', { email: 'a@b.co', password: 'longenough' }, OWNER)).status).toBe(501);
   });
 });
