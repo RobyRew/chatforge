@@ -66,7 +66,9 @@ authModule.get('/callback', async (c) => {
     await client.handleSignInCallback(callbackUrl);
     const { claims } = await client.getContext();
     if (claims) await ensureAppUser(claims as LogtoIdClaims); // create the local user row now
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[auth/callback] sign-in failed:', err instanceof Error ? err.message : err);
     return c.redirect('/api/auth/sign-in', 302);
   }
 
@@ -87,8 +89,9 @@ authModule.all('/sign-out', async (c) => {
         target = u;
       });
       await client.signOut(`${publicOrigin(url.origin)}/`);
-    } catch {
-      /* fall through to local cleanup even if Logto is unreachable */
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth/sign-out] Logto end-session failed (clearing local session anyway):', err instanceof Error ? err.message : err);
     }
     await dropSession(sid);
     deleteCookie(c, SID_COOKIE, { path: '/' });

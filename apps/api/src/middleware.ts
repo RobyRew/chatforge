@@ -62,8 +62,10 @@ export const resolveUser: MiddlewareHandler<Vars> = async (c, next) => {
       const { sessionClaims, ensureAppUser } = await import('./auth/logto');
       const claims = await sessionClaims(sid);
       if (claims) base = await ensureAppUser(claims);
-    } catch {
+    } catch (err) {
       // Logto/DB unreachable — leave the request unauthenticated (fail closed).
+      // eslint-disable-next-line no-console
+      console.error('[auth] session resolution failed:', err instanceof Error ? err.message : err);
     }
   }
 

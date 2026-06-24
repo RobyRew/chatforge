@@ -110,7 +110,9 @@ export async function sessionClaims(sid: string): Promise<LogtoIdClaims | null> 
     const { isAuthenticated, claims } = await client.getContext();
     if (!isAuthenticated || !claims) return null;
     return claims as LogtoIdClaims;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[auth/logto] sessionClaims failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }

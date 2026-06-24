@@ -46,7 +46,9 @@ createChatGateway({
       const { sessionClaims, appUserIdForSub } = await import('./auth/logto');
       const claims = await sessionClaims(decodeURIComponent(sid));
       return claims ? await appUserIdForSub(claims.sub) : null;
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[ws/auth] session resolution failed:', err instanceof Error ? err.message : err);
       return null;
     }
   },
