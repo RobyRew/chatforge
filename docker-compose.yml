@@ -4,6 +4,13 @@ name: chatforge
 # overridable via env — set real values in Dokploy (Compose → Environment) for production.
 # `docker compose up` runs everything with the dev defaults; or run only postgres/minio/mailpit
 # and use `npm run dev`.
+#
+# Published ports are bound to 127.0.0.1 on purpose. Docker publishes to
+# 0.0.0.0 by default, which on the VPS put Postgres and the API on every host
+# interface; only ufw-docker's default-deny kept them off the internet — one
+# firewall rule away from exposing the database. Traefik reaches `web` over
+# dokploy-network, not through a published port, so production routing is
+# unaffected, and localhost:5432 / :4321 / :8787 still work for local dev.
 services:
   postgres:
     image: postgres:17-alpine
@@ -11,7 +18,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-chatforge}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatforge}
       POSTGRES_DB: ${POSTGRES_DB:-chatforge}
-    ports: ['5432:5432']
+    ports: ['127.0.0.1:5432:5432']
     volumes: ['./.data/postgres:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-chatforge}']
@@ -28,14 +35,14 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-chatforge123}
-    ports: ['9000:9000', '9001:9001']
+    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
     volumes: ['./.data/minio:/data']
 
   mailpit:
     image: axllent/mailpit:latest
     # Dev-only (local SMTP capture). Not started in prod.
     profiles: ['dev']
-    ports: ['1025:1025', '8025:8025']
+    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
 
   api:
     build:
@@ -56,7 +63,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-chatforge}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-    ports: ['8787:8787']
+    ports: ['127.0.0.1:8787:8787']
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,5 +72,5 @@ services:
     build:
       context: .
       dockerfile: infra/web.Dockerfile
-    ports: ['4321:8080']
+    ports: ['127.0.0.1:4321:8080']
     depends_on: [api]
