@@ -54,6 +54,14 @@ accountModule.post('/profile', requireAuth(), async (c) => {
   const { user } = await import('../db/schema');
   const { and, eq, ne } = await import('drizzle-orm');
   const db = getDb();
+
+  // Replacing the avatar? Remember the old URL so we can drop the orphaned blob after the update.
+  let previousImage: string | null = null;
+  if (updates['image'] !== undefined) {
+    const before = await db.select({ image: user.image }).from(user).where(eq(user.id, me.id)).limit(1);
+    previousImage = before[0]?.image ?? null;
+  }
+
   if (typeof updates['username'] === 'string') {
     const clash = await db.select({ id: user.id }).from(user).where(and(eq(user.username, updates['username']), ne(user.id, me.id))).limit(1);
     if (clash.length) return c.json({ error: 'that username is taken' }, 409);
@@ -72,6 +80,10 @@ accountModule.post('/profile', requireAuth(), async (c) => {
   if (u) {
     const { broadcastToPeers } = await import('../chat/broadcast');
     broadcastToPeers(me.id, { t: 'profile', userId: me.id, name: u.name, username: u.username, email: u.email, image: u.image, statusEmoji: u.statusEmoji, statusText: u.statusText });
+  }
+  if (previousImage && previousImage !== u?.image) {
+    const { deleteOwnAvatarByUrl } = await import('./blobs');
+    await deleteOwnAvatarByUrl(me.id, previousImage).catch(() => undefined); // best-effort GC
   }
   return c.json({ user: u });
 });

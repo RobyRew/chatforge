@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Me, type Profile } from '../../lib/api';
 import { getDisplayAs, setDisplayAs, type DisplayAs } from '../../lib/displayPref';
 import { useMe } from '../../lib/useMe';
@@ -41,6 +41,7 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<void> }):
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>();
   const [error, setError] = useState<string>();
+  const avatarInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void api
@@ -50,6 +51,24 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<void> }):
   }, []);
 
   const set = (patch: Partial<Profile>): void => setP((prev) => ({ ...prev, ...patch }));
+
+  /** Upload (or clear) the profile picture and persist it right away, so peers see it live. */
+  const uploadAvatar = async (file: File | null): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    setMsg(undefined);
+    try {
+      const image = file ? (await api.blobs.uploadAvatar(file)).url : null;
+      await api.updateProfile({ image });
+      set({ image });
+      setMsg(file ? 'Photo updated.' : 'Photo removed.');
+      await onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const save = async (): Promise<void> => {
     setBusy(true);
@@ -82,6 +101,27 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<void> }):
           <h3 className="text-sm font-semibold text-zinc-200">Profile</h3>
           <p className="truncate text-xs text-zinc-500">{me.email}</p>
         </div>
+        <div className="ml-auto flex shrink-0 gap-2">
+          <input
+            ref={avatarInput}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void uploadAvatar(file);
+            }}
+          />
+          <button className={ui.btn} disabled={busy} onClick={() => avatarInput.current?.click()}>
+            Upload photo
+          </button>
+          {p.image && (
+            <button className={ui.btn} disabled={busy} onClick={() => void uploadAvatar(null)}>
+              Remove
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs text-zinc-400">
@@ -94,8 +134,8 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<void> }):
         </label>
       </div>
       <label className="flex flex-col gap-1 text-xs text-zinc-400">
-        Avatar URL
-        <input className={ui.field} value={p.image ?? ''} onChange={(e) => set({ image: e.target.value || null })} placeholder="https://… (uploads come in a later phase)" />
+        Avatar URL <span className="text-zinc-600">— set by “Upload photo”, or point at an external image</span>
+        <input className={ui.field} value={p.image ?? ''} onChange={(e) => set({ image: e.target.value || null })} placeholder="https://…" />
       </label>
       <div className="grid gap-2 sm:grid-cols-[88px_1fr]">
         <label className="flex flex-col gap-1 text-xs text-zinc-400">

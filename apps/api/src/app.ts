@@ -5,6 +5,7 @@ import { resolveUser, securityHeaders, type Vars } from './middleware';
 import { accountModule } from './modules/account';
 import { adminModule } from './modules/admin';
 import { authModule } from './modules/auth';
+import { blobsModule } from './modules/blobs';
 import { chatModule } from './modules/chat';
 import { conversionsModule } from './modules/conversions';
 import { convertModule } from './modules/convert';
@@ -48,6 +49,7 @@ export function createApp(): OpenAPIHono<Vars> {
   app.route('/api/convert', convertModule);
   app.route('/api/conversions', conversionsModule);
   app.route('/api/vault', vaultModule); // saved imported chats (E2E ciphertext only)
+  app.route('/api/blobs', blobsModule); // encrypted chat attachments + avatars (object storage)
   app.route('/api/admin', adminModule);
   app.route('/api/chat', chatModule);
 

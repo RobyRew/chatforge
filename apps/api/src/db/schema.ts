@@ -39,19 +39,6 @@ export const conversions = pgTable('conversions', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-/** Registry of E2E-encrypted blobs. Ciphertext lives in S3/MinIO; we track only wrapped keys. */
-export const blobs = pgTable('blobs', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  objectKey: text('object_key').notNull(),
-  wrappedKey: text('wrapped_key').notNull(), // base64
-  salt: text('salt').notNull(), // base64
-  size: integer('size').notNull().default(0),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
 // ── Chat (CH-2) ── server stores only opaque ciphertext + membership; never plaintext. ──
 
 export const chatConversations = pgTable('chat_conversations', {
@@ -98,6 +85,34 @@ export const userPresence = pgTable('user_presence', {
     .references(() => user.id, { onDelete: 'cascade' }),
   lastSeenAt: timestamp('last_seen_at').notNull().defaultNow(),
 });
+
+/**
+ * Registry of stored blobs (P3); the bytes themselves live in S3/MinIO under `objectKey`.
+ *
+ * `kind='attachment'` — a chat attachment. The bytes are **client-side encrypted** before upload
+ * (the AES key travels only inside the MLS payload), so the server holds ciphertext and deliberately
+ * records **no filename and no MIME type** — those are part of the encrypted payload. `conversationId`
+ * exists purely for access control: only members of that conversation may fetch it.
+ *
+ * `kind='avatar'` — profile picture. Plaintext, like `name`/`username`/`bio` (ADR-0024), so it needs
+ * a `contentType` to be served; readable by any signed-in user who knows the (random) id.
+ */
+export const blobs = pgTable(
+  'blobs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'attachment' | 'avatar'
+    conversationId: uuid('conversation_id').references(() => chatConversations.id, { onDelete: 'cascade' }),
+    contentType: text('content_type'), // avatars only; NULL for opaque attachment ciphertext
+    objectKey: text('object_key').notNull(),
+    size: integer('size').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({ byOwner: index('blobs_owner_idx').on(t.ownerId) }),
+);
 
 /**
  * Vault: imported chats a user purposely saved, end-to-end encrypted. The server stores only the

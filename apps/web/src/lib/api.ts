@@ -5,7 +5,9 @@
  */
 import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 
-const BASE = import.meta.env.VITE_API_URL ?? '';
+/** Same-origin by default; only set VITE_API_URL when the SPA is served from another host. */
+export const API_BASE: string = import.meta.env.VITE_API_URL ?? '';
+const BASE = API_BASE;
 
 export class ApiError extends Error {
   constructor(
@@ -166,6 +168,25 @@ export const api = {
     relayWelcome: (conversationId: string, recipientId: string, welcome: string): Promise<{ id: string }> =>
       post('/api/chat/welcomes', { conversationId, recipientId, welcome }),
     ackWelcome: (id: string): Promise<{ ok: boolean }> => del(`/api/chat/welcomes/${id}`),
+  },
+
+  blobs: {
+    /**
+     * Upload a profile picture (plaintext — avatars are profile data, not chat content) and get the
+     * URL to store on the profile. Chat attachments go through `lib/attachments.ts` instead: they
+     * are encrypted in the browser first.
+     */
+    uploadAvatar: async (file: File): Promise<{ id: string; url: string }> => {
+      const res = await fetch(`${BASE}/api/blobs/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      });
+      if (!res.ok) throw await toError(res);
+      return (await res.json()) as { id: string; url: string };
+    },
+    remove: (id: string): Promise<{ ok: boolean }> => del(`/api/blobs/${id}`),
   },
 
   vault: {

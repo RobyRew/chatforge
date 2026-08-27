@@ -1,7 +1,8 @@
 import type { ChatMessageDTO, ClientFrame, ConversationPeer, ConversationSummary, PresenceState, ServerFrame } from '@chatforge/types';
 import { ApiError, api } from './api';
+import { encryptAndUpload, type AttachmentRef } from './attachments';
 import { getCursor, getMessages, putMessage, setCursor, type StoredMessage } from './chatDb';
-import { encodeMsg, encodeReaction, parsePayload, type ReplyRef } from './chatPayload';
+import { encodeFile, encodeMsg, encodeReaction, parsePayload, type ReplyRef } from './chatPayload';
 import { chatWorker } from './chatWorkerClient';
 import { notify } from './notifications';
 
@@ -22,6 +23,9 @@ export interface UiMessage {
   mine: boolean;
   replyTo?: ReplyRef;
   reactions?: Reaction[];
+  attachment?: AttachmentRef;
+  /** Set on an outgoing message while its file is still encrypting/uploading. */
+  uploading?: boolean;
 }
 
 export interface ChatState {
@@ -128,6 +132,7 @@ class ChatClient {
       mine: m.senderId === this.me?.id,
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...(m.reactions ? { reactions: m.reactions } : {}),
+      ...(m.attachment ? { attachment: m.attachment } : {}),
     };
   }
   private toStored(m: UiMessage): StoredMessage {
@@ -140,6 +145,7 @@ class ChatClient {
       ts: m.ts,
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...(m.reactions ? { reactions: m.reactions } : {}),
+      ...(m.attachment ? { attachment: m.attachment } : {}),
     };
   }
 
@@ -173,10 +179,14 @@ class ChatClient {
         if (payload.t === 'reaction') {
           this.applyReaction(conversationId, payload.targetSeq, payload.emoji, m.senderId, payload.remove ?? false);
         } else {
-          await putMessage({ key: `${conversationId}:${m.seq}`, conversationId, seq: m.seq, senderId: m.senderId, text: payload.text, ts: payload.ts, ...(payload.replyTo ? { replyTo: payload.replyTo } : {}) });
-          this.addMessage(conversationId, { id: m.id, conversationId, senderId: m.senderId, text: payload.text, ts: payload.ts, seq: m.seq, pending: false, mine: false, ...(payload.replyTo ? { replyTo: payload.replyTo } : {}) });
+          const extra = {
+            ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
+            ...(payload.t === 'file' ? { attachment: payload.file } : {}),
+          };
+          await putMessage({ key: `${conversationId}:${m.seq}`, conversationId, seq: m.seq, senderId: m.senderId, text: payload.text, ts: payload.ts, ...extra });
+          this.addMessage(conversationId, { id: m.id, conversationId, senderId: m.senderId, text: payload.text, ts: payload.ts, seq: m.seq, pending: false, mine: false, ...extra });
           const peer = this.state.conversations.find((c) => c.id === conversationId)?.peers.find((p) => p.id === m.senderId);
-          notify(peer?.email ?? 'New message', payload.text);
+          notify(peer?.email ?? 'New message', payload.t === 'file' ? payload.text || `📎 ${payload.file.name}` : payload.text);
         }
       }
       await setCursor(conversationId, m.seq);
@@ -236,6 +246,25 @@ class ChatClient {
     }
   }
 
+  /**
+   * Send a file. It is encrypted and uploaded first (the bubble shows as "uploading"), then the
+   * reference — including the key the server never sees — goes out inside the E2E payload.
+   */
+  async sendAttachment(conversationId: string, file: File, caption = '', replyTo?: ReplyRef): Promise<void> {
+    if (!this.me) return;
+    const clientId = crypto.randomUUID();
+    this.addMessage(conversationId, { id: clientId, conversationId, senderId: this.me.id, text: caption, ts: Date.now(), seq: null, pending: true, mine: true, uploading: true, ...(replyTo ? { replyTo } : {}) });
+    try {
+      const ref = await encryptAndUpload(file, conversationId);
+      this.updateById(conversationId, clientId, (m) => ({ ...m, attachment: ref, uploading: false }));
+      const { ciphertext } = await chatWorker.encrypt(conversationId, encodeFile(ref, caption, replyTo));
+      this.wsSend({ t: 'send', conversationId, ciphertext, clientId });
+    } catch (e) {
+      this.removeById(conversationId, clientId); // nothing was sent — drop the optimistic bubble
+      this.emit({ error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   /** Toggle the current user's reaction on a message (referenced by its `seq`). */
   async sendReaction(conversationId: string, targetSeq: number, emoji: string): Promise<void> {
     if (!this.me) return;
@@ -266,6 +295,26 @@ class ChatClient {
       }
       return { ...m, reactions: reactions.filter((r) => r.by.length > 0) };
     });
+  }
+
+  /** Update a not-yet-confirmed local message by its client id (it has no `seq` yet). */
+  private updateById(conversationId: string, id: string, updater: (m: UiMessage) => UiMessage): void {
+    const list = this.state.messages[conversationId];
+    if (!list) return;
+    const idx = list.findIndex((m) => m.id === id);
+    if (idx === -1) return;
+    const next = [...list];
+    next[idx] = updater(list[idx]!);
+    this.setMessages(conversationId, next);
+  }
+
+  private removeById(conversationId: string, id: string): void {
+    const list = this.state.messages[conversationId];
+    if (!list) return;
+    this.setMessages(
+      conversationId,
+      list.filter((m) => m.id !== id),
+    );
   }
 
   private updateMessage(conversationId: string, seq: number, updater: (m: UiMessage) => UiMessage): void {

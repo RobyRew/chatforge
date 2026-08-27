@@ -40,7 +40,7 @@ chatforge/
 │   ├── ui/       @chatforge/ui       — shared React components (optional)
 │   └── config/   @chatforge/config   — shared tsconfig/eslint/tailwind presets
 ├── apps/
-│   ├── api/      @chatforge/api      — Hono + zod-openapi + Drizzle + better-auth
+│   ├── api/      @chatforge/api      — Hono + zod-openapi + Drizzle + Logto (ADR-0023)
 │   └── web/      @chatforge/web      — Vite + React SPA
 └── infra/        Dockerfiles, nginx.conf, docker-compose, Dokploy notes
 ```
@@ -232,6 +232,69 @@ web build (the chat worker bundles ts-mls + @hpke/core). The **live two-browser 
 testing** — the client (worker/WS/IndexedDB/MLS ordering) can't be runtime-tested in the sandbox; expect
 minor iteration. ts-mls remains unaudited (ADR-0018).
 
+## ADR-0023 — Auth: better-auth → Logto (OIDC Traditional Web) (2026-06-06) · Accepted
+**Supersedes ADR-0006 and the auth half of ADR-0018/ADR-0019.**
+**Context:** better-auth's peer chain (ADR-0019) needed `legacy-peer-deps` and explicit `@better-auth/*`
+installs to coexist with zod@3, and every endpoint under `/api/auth/*` started returning 500 in
+production. Meanwhile self-hosted **Logto** already exists as the intended central IdP for every app
+(`auth.robyrew.com`) — running a second, hand-maintained identity stack for one of them was the odd
+one out.
+**Decision:** delegate **all** identity to Logto as a **Traditional Web** (confidential) client.
+`@logto/node` in the API owns the OIDC dance and a server-side session table (`logto_sessions`); the
+browser holds only an opaque `HttpOnly` **`cf_sid`** cookie — **no access/ID token ever reaches client
+JS**. REST (`resolveUser`) and the WebSocket upgrade both resolve the user from that one cookie. The
+local `user` row is a thin projection keyed by `logto_sub`, created on first sign-in (`ensureAppUser`);
+passwords, passkeys, social login and MFA are Logto's problem now. `jose` and the whole better-auth
+dependency chain are gone; admin user-creation is a 501 stub (Logto owns sign-up).
+**Rationale:** one IdP for every app, dramatically less auth code to own, tokens out of the browser,
+and MFA/passkeys/social become configuration rather than code.
+**Consequences:** migration `0007` **drops** `account`/`passkey`/`session`/`verification` and adds
+`user.logto_sub NOT NULL UNIQUE` — which requires an **empty `user` table**, so this was a clean
+cutover, not a data migration. RBAC (ADR-0021) is untouched and still enforced server-side against
+`user.id`. ts-mls declares its own MLS peer deps now (`@noble/*`, `@hpke/*`) — they used to arrive
+transitively via better-auth, and removing it broke the web build until they were declared.
+**Status:** Accepted. Full details in `docs/auth-logto.md`.
+
+## ADR-0024 — P3 blobs: E2E attachments + plaintext avatars, proxied through the API (2026-08-27) · Accepted
+**Context:** Roadmap P3 — chat attachments and profile pictures need real object storage. The user
+chose **MinIO on the VPS** (2 GB box, already tight).
+**Decision:**
+- **Attachments are end-to-end encrypted, avatars deliberately are not.** A file gets a fresh
+  AES-256-GCM key in the browser; only ciphertext is uploaded, and the key + filename + MIME type
+  ride inside the MLS payload (`chatPayload.ts` gains `t:'file'`). The server therefore stores bytes
+  it cannot name, type or open — a blob id is useless to anyone outside the conversation, and useless
+  to the server even with database access. Avatars are the explicit exception: they are profile data
+  like `name`/`username`/`bio`, which the server already stores in the clear, so encrypting them would
+  buy nothing while making them unrenderable for peers. Recorded here so the asymmetry is a decision,
+  not an oversight.
+- **Bytes proxy through the API, not presigned URLs.** Presigning would mean publishing MinIO on its
+  own hostname with CORS and a public route; proxying keeps one origin, one auth path (the `cf_sid`
+  cookie), no MinIO exposure, and central quota/rate-limit enforcement. Uploads buffer (hard-capped at
+  25 MB attachments / 2 MB avatars); downloads stream straight through as a web `ReadableStream`.
+- **Seams, as everywhere else:** `BlobStore` (S3 + memory) for bytes and `BlobRepo` (Drizzle + memory)
+  for metadata, so the entire authorization path is tested without MinIO *or* Postgres.
+- **`@aws-sdk/client-s3` over a hand-rolled SigV4 signer** — no Docker on the dev machine means a
+  hand-rolled signer could not be round-trip verified before shipping, and this stack has already lost
+  time to production-only auth failures. The SDK is **lazy-imported inside `S3BlobStore`**, so an
+  instance that never serves a blob request never pays its startup cost.
+- **Hardening (vs a hostile client):** membership — not ownership — gates attachment reads, so both
+  sides of a DM can fetch, and a non-member gets **404, never 403** (the id is never confirmed);
+  uuid-shape validation before any repo call; `Content-Length` checked *before* buffering; per-user
+  token-bucket upload limit + per-user byte quota; avatars **magic-byte sniffed** against a raster
+  allowlist (**SVG rejected** — it can carry script) and served `nosniff` + `default-src 'none'` +
+  `Content-Disposition: inline`, attachments always `application/octet-stream` + `attachment`. On the
+  client, a peer-supplied MIME type is never applied to a `blob:` URL verbatim (an inline allowlist
+  maps everything else to `application/octet-stream`), so a hostile peer can't get a same-origin
+  scriptable blob URL rendered. Object keys are freshly generated UUIDs — no user input in a path.
+- **Storage isn't a hard dependency:** with no S3 credentials the blob routes answer **503** and the
+  rest of the app is unaffected; `put` self-heals a missing bucket rather than staying broken until
+  the next restart (MinIO may not be up when the API boots).
+**Status:** Accepted. Verified: 12 new API tests (membership gating, 404-not-403, quota, pre-buffer
+size cap, SVG + lying-Content-Type rejection, owner-only delete, 503 without a store) + full
+`turbo test typecheck` + web build. Migrations `0008` (drop the dead M4 `blobs` scaffolding) + `0009`
+(the real table). `MemoryChatRepo` now mints uuid conversation ids — the old `conv_N` doubles hid the
+route validation that production ids actually go through.
+
 ---
 
 # Conventions
@@ -275,4 +338,6 @@ against (2026-06-01):
 - [x] **Vault Conversations** — save an imported/edited chat to an E2E vault (`vault_conversations`, server stores only ciphertext; migration `0004`) and view/link it to a live DM. Client encrypts in one of two modes (envelope-tagged `d1:`/`p1:` so they coexist): **device key** (WebCrypto AES-256-GCM, non-extractable, IndexedDB — device-local) or **passphrase** (WebCrypto PBKDF2-SHA256 600k → AES-GCM with a per-user server salt `user.vault_salt`, session-cached — cross-device; set/unlock in Settings). Migration `0005`. "Save to Vault" in the converter; **Vault** section + read-only decrypt view + link-to-DM in chat. `/api/vault` REST (save/list/get/link/delete, ownership-scoped + size-capped).
 - [x] **Rich-chat roadmap P1 — message interactions** (plan: `~/.claude/plans/i-waant-if-someone-shiny-kazoo.md`) — structured E2E payload (`lib/chatPayload.ts`: `{t:'msg'|'reaction'}`, replies/reactions referenced by **`seq`** = the stable shared id; worker now encrypts an opaque payload string). **Reactions** (optimistic + persisted on the target message), **replies** (quoted), **right-click/long-press context menus** (`features/chat/ContextMenu.tsx`), **browser notifications** (off by default, Settings toggle, fires only when hidden). IndexedDB bumped to v2 with a `cursors` store so already-processed control messages aren't re-decrypted on reload.
 - [x] **Rich-chat roadmap P2 — profiles + live propagation + presence** — user `bio`/`about`/`statusEmoji`/`statusText` (+ existing `image`); `GET/POST /api/me/profile` (avatar URL/bio/about/status) **broadcasts a live `profile` frame** to conversation peers via a `chat/broadcast.ts` seam the gateway registers; `ConversationPeer` now carries name/username/image/status (Drizzle join in `listConversations`); **away** presence (`active` client frame on `visibilitychange` → `presence.state`); web: avatars (image/initials, `features/chat/Avatar.tsx`), custom status, online/away dots in the list + thread header, **display-as Name/Username/Email** preference (`lib/displayPref.ts`), fuller Settings profile editor. Migration `0006`.
-- [ ] Roadmap next: **P3** MinIO storage + encrypted attachments + avatar uploads → **P4** key-verification (MLS safety numbers) + Spotify "now playing" + settings hub. Also pending: device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers.
+- [x] **Auth cutover to Logto (ADR-0023)** — all identity delegated to self-hosted Logto via a Traditional Web (confidential) client; server-side session in `logto_sessions`, browser holds only the opaque `cf_sid` cookie (REST **and** the WS upgrade resolve from it). `user` re-keyed on `logto_sub`; `account`/`passkey`/`session`/`verification` dropped (migration `0007`, clean cutover — requires an empty `user` table). better-auth + `jose` removed; ts-mls's MLS peer deps now declared explicitly. Docs: `docs/auth-logto.md`.
+- [x] **Rich-chat roadmap P3 — object storage, encrypted attachments, avatar uploads (ADR-0024)** — MinIO promoted out of the `dev` profile onto the VPS; `blobs` table + `/api/blobs` (upload attachment scoped to a conversation, upload avatar, download, delete) behind swappable `BlobStore` (S3/memory) + `BlobRepo` (Drizzle/memory). **Attachments are E2E**: fresh AES-256-GCM key per file in the browser, only ciphertext uploaded, key/name/MIME carried in the MLS payload (`t:'file'`); **avatars are plaintext profile data** by design. Web: 📎 button + drag-and-drop + paste-to-send, inline image previews, on-demand decrypt/Save for other files, avatar upload in Settings (replacing an avatar GCs the old blob). Server hardening: membership-gated reads answering 404-not-403, pre-buffer size caps, per-user quota + upload rate limit, magic-byte image allowlist (no SVG), `nosniff`/`default-src 'none'`; 503 when storage isn't configured. nginx `client_max_body_size 32m`. **12 new API tests** (33 total) + typecheck + web build green; migrations `0008`+`0009`.
+- [ ] Roadmap next: **P4** key-verification (MLS safety numbers) + Spotify "now playing" + settings hub. Also pending: attachment GC when a message is deleted, device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers.

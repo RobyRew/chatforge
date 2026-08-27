@@ -57,6 +57,20 @@
       "when": 1780716708426,
       "tag": "0007_uneven_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787795531421,
+      "tag": "0008_drop_legacy_blobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787795542214,
+      "tag": "0009_blobs_store",
+      "breakpoints": true
     }
   ]
 }

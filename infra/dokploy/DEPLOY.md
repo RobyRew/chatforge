@@ -2,8 +2,8 @@
 
 Single **origin**, same-domain topology: the web SPA and the API share one domain. The web
 container's nginx (in compose) — or Traefik (Dokploy Applications) — routes **`/api/*`** and
-**`/ws`** to the API; everything else is the SPA. This keeps the better-auth session cookie,
-passkeys (WebAuthn), and the WebSocket all **same-origin**, with no CORS/SameSite gymnastics.
+**`/ws`** to the API; everything else is the SPA. This keeps the Logto session cookie (`cf_sid`), the
+WebSocket, and blob uploads all **same-origin**, with no CORS/SameSite gymnastics.
 
 ```
                          ┌────────── chat.<domain> (Traefik, TLS) ──────────┐
@@ -29,17 +29,30 @@ expose **only the web service** to the internet.
 2. **Domain**: attach `chat.<domain>` to the **`web`** service (port **8080**), enable Let's Encrypt.
    (Remove/ignore the local `ports:` host mappings — Traefik fronts it.)
 3. **Env** (Dokploy → override the dev defaults in compose):
-   - `BETTER_AUTH_SECRET` = `openssl rand -base64 32`
-   - `BETTER_AUTH_URL` = `https://chat.<domain>`  ·  `CORS_ORIGIN` = `https://chat.<domain>`
-   - `PASSKEY_RPID` = `chat.<domain>`  ·  `PASSKEY_ORIGIN` = `https://chat.<domain>`
-   - `ADMIN_EMAIL` + `ADMIN_PASSWORD` — **first-run owner** (seeded only if no owner exists; inert once
-     you change it in the panel). Set these for the very first deploy, then you may remove them.
-   - `POSTGRES_PASSWORD` (+ matching `DATABASE_URL`), `MINIO_ROOT_PASSWORD` — set real secrets.
-4. **Deploy.** On boot the API runs `drizzle-kit migrate` (creates all 17 tables — incl. CH-3
-   `key_packages`/`mls_welcomes` + admin `roles`/`user_grants`), then **bootstraps** the built-in roles +
-   the env owner, then starts. The web SPA build needs no `VITE_API_URL` (same-origin).
+   - `LOGTO_ENDPOINT` = `https://auth.<domain>`  ·  `LOGTO_APP_ID` + `LOGTO_APP_SECRET` from the Logto
+     console (**Traditional Web** application — see `docs/auth-logto.md`)
+   - `APP_BASE_URL` = `https://chat.<domain>`  ·  `CORS_ORIGIN` = `https://chat.<domain>`
+   - `ADMIN_EMAIL` — **first-run owner**: the first person to sign in with this email gets the `owner`
+     role (once). Inert afterwards.
+   - `POSTGRES_PASSWORD` (+ matching `DATABASE_URL`) — set a real secret.
+   - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` — set real secrets, **and set `S3_ACCESS_KEY` /
+     `S3_SECRET_KEY` to the same values** (the API authenticates to MinIO with them). Leave the S3 keys
+     blank to run without attachments/avatars — the blob routes then answer 503, nothing else breaks.
+   In the **Logto console**, the app's redirect URI must be `https://chat.<domain>/api/auth/callback`
+   and its post-sign-out URI `https://chat.<domain>`.
+4. **Deploy.** On boot the API runs `drizzle-kit migrate`, then **bootstraps** the built-in roles, then
+   starts. The web SPA build needs no `VITE_API_URL` (same-origin).
 
 That's it — one public domain, internal Postgres/MinIO, auto-migrations.
+
+> **Memory:** MinIO adds ~250 MB RSS. On a 2 GB VPS make sure swap is on before enabling it:
+> ```
+> sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+> sudo mkswap /swapfile && sudo swapon /swapfile
+> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+> ```
+> Also add MinIO's volume (`./.data/minio`) to your Restic backup set — attachments live only there.
+> `minio/minio:latest` is unpinned; pin it to the digest you're running once it's confirmed working.
 
 ---
 
@@ -67,14 +80,15 @@ That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 | Service | Var | Value |
 |---|---|---|
 | API | `DATABASE_URL` | `postgres://…:…@<pg-host>:5432/chatforge` |
-| API | `BETTER_AUTH_SECRET` | strong random (`openssl rand -base64 32`) |
-| API | `BETTER_AUTH_URL` | `https://chat.<domain>` (public origin) |
+| API | `LOGTO_ENDPOINT` | `https://auth.<domain>` (Logto issuer base) |
+| API | `LOGTO_APP_ID` / `LOGTO_APP_SECRET` | Traditional Web app credentials (secret stays server-side) |
+| API | `APP_BASE_URL` | `https://chat.<domain>` — builds the OIDC redirect URIs (no trailing slash) |
 | API | `CORS_ORIGIN` | `https://chat.<domain>` |
-| API | `PASSKEY_RPID` | `chat.<domain>` (host, no scheme) |
-| API | `PASSKEY_ORIGIN` | `https://chat.<domain>` (no trailing slash) |
-| API | `ADMIN_EMAIL` | first-run owner email (seeded only if no owner exists; then inert) |
-| API | `ADMIN_PASSWORD` | first-run owner password (min 8 chars) |
-| API | `S3_*` | object storage (CH-5 only) |
+| API | `ADMIN_EMAIL` | first-run owner email (granted `owner` on first sign-in; then inert) |
+| API | `S3_ENDPOINT` | `http://minio:9000` in compose |
+| API | `S3_BUCKET` / `S3_REGION` | `chatforge` / `us-east-1` (created automatically on boot) |
+| API | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | must match `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`; blank = uploads disabled (503) |
+| API | `BLOB_QUOTA_BYTES` | per-user storage cap, default `536870912` (512 MB) |
 | Web (build arg) | `VITE_API_URL` | **leave unset** (same-origin). Only set for a split-origin deploy. |
 
 ## Migrations
@@ -83,17 +97,20 @@ The API image auto-runs `drizzle-kit migrate` on boot (CMD), applying the commit
 locally and **commit** the new migration — it'll apply on the next deploy. (Ensure Postgres is
 reachable at boot; the container will restart-loop until it is.)
 
-## Passkeys (WebAuthn)
-With same-origin, `PASSKEY_RPID` = the single domain (`chat.<domain>`) and `PASSKEY_ORIGIN` =
-`https://chat.<domain>`. Passkeys require **HTTPS** (Let's Encrypt via Traefik handles this).
+## Passkeys, passwords, MFA
+All owned by **Logto** — configure them in the Logto console, not here. ChatForge only ever sees the
+`cf_sid` session cookie (see `docs/auth-logto.md`).
 
 ## Post-deploy checks
 1. `https://chat.<domain>/` → converter loads (works even if the API is down).
-2. `/account` → create an account, **register a passkey**, sign out, sign in with the passkey.
+2. `/account` → **Sign in** bounces to Logto's hosted UI and back; `/api/me` returns your user.
 3. `https://chat.<domain>/api/openapi.json` → 200 (API reachable, same-origin).
 4. Sign in as the bootstrap owner (`ADMIN_EMAIL`) → **`/dashboard`** then **`/admin`** → Users / Roles /
-   Feature flags / Audit load; create a user, assign a role, delegate a permission. Then change the owner
-   password in `/change-password` — the env `ADMIN_PASSWORD` is now inert.
+   Feature flags / Audit load; assign a role, delegate a permission.
+5. **Storage**: Settings → *Upload photo* (your avatar appears in chat), then in a DM attach a file with
+   📎 or drag-and-drop — an image should preview inline for both sides. If uploads 503, the API is
+   missing `S3_ACCESS_KEY`/`S3_SECRET_KEY`; if they 413 at ~1 MB, an upstream proxy is capping the body
+   (the bundled nginx allows 32 MB).
 5. Chat presence/typing/read once the CH-4 UI lands (the `/ws` transport is already live).
 
 ## Notes

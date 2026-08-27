@@ -22,7 +22,9 @@ export class MemoryChatRepo implements ChatRepo {
         return { id: conv.id, created: false };
       }
     }
-    const id = `conv_${++this.counter}`;
+    // UUIDs, not `conv_N` — Postgres ids are uuids and routes validate that shape, so the double
+    // has to be faithful or it hides real 400s.
+    const id = crypto.randomUUID();
     this.convs.set(id, { id, members: [a, b] });
     this.lastRead.set(this.key(id, a), 0);
     this.lastRead.set(this.key(id, b), 0);

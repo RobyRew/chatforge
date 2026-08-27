@@ -10,7 +10,7 @@ RUN npm install --include=dev --no-audit --no-fund --no-package-lock \
   && chown -R node:node /app
 USER node
 # Production only at *runtime* (keeps the install above with devDeps; also disables the API's
-# dev-only bearer-token fallback so prod requires real better-auth sessions).
+# dev-only bearer-token fallback so prod requires a real Logto session cookie).
 ENV NODE_ENV=production
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

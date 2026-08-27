@@ -26,6 +26,8 @@ export interface StoredMessage {
   ts: number;
   replyTo?: { seq: number; text: string; senderId: string };
   reactions?: { emoji: string; by: string[] }[];
+  /** Attachment reference incl. its decryption key — the ciphertext itself stays in object storage. */
+  attachment?: import('./attachments').AttachmentRef;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

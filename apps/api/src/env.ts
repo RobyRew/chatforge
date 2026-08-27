@@ -12,11 +12,27 @@ export interface Env {
   appBaseUrl: string;
   /** First-run owner: the user who first signs in with this email is granted the 'owner' role (once). */
   adminEmail?: string;
+  /** S3-compatible object storage for blobs (MinIO on the VPS / Backblaze B2). */
+  s3: S3Env;
+  /** Per-user storage quota in bytes (attachments + avatars). */
+  blobQuotaBytes: number;
+}
+
+export interface S3Env {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  /** True only when credentials are present — otherwise the blob routes answer 503. */
+  configured: boolean;
 }
 
 export function loadEnv(): Env {
   const port = Number(process.env.PORT ?? 8787);
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:4321';
+  const accessKey = process.env.S3_ACCESS_KEY ?? '';
+  const secretKey = process.env.S3_SECRET_KEY ?? '';
   const env: Env = {
     port,
     corsOrigin,
@@ -24,8 +40,22 @@ export function loadEnv(): Env {
     logtoAppId: process.env.LOGTO_APP_ID ?? '',
     logtoAppSecret: process.env.LOGTO_APP_SECRET ?? '',
     appBaseUrl: (process.env.APP_BASE_URL ?? corsOrigin).replace(/\/+$/, ''),
+    s3: {
+      endpoint: (process.env.S3_ENDPOINT ?? 'http://minio:9000').replace(/\/+$/, ''),
+      region: process.env.S3_REGION ?? 'us-east-1',
+      bucket: process.env.S3_BUCKET ?? 'chatforge',
+      accessKey,
+      secretKey,
+      configured: !!(accessKey && secretKey),
+    },
+    blobQuotaBytes: positiveInt(process.env.BLOB_QUOTA_BYTES, 512 * 1024 * 1024),
   };
   if (process.env.DATABASE_URL) env.databaseUrl = process.env.DATABASE_URL;
   if (process.env.ADMIN_EMAIL) env.adminEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
   return env;
+}
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
 }

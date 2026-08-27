@@ -24,6 +24,15 @@ process.on('uncaughtException', (err) => {
 // Seed built-in roles + the env-defined owner (first run only). Runs after `drizzle-kit migrate`.
 void bootstrap();
 
+// Object storage for attachments/avatars. Without credentials the blob routes answer 503 rather
+// than accepting uploads we can't persist — everything else keeps working.
+if (env.s3.configured) {
+  void import('./storage/blobStore').then(({ initBlobStore }) => initBlobStore(env.s3));
+} else {
+  // eslint-disable-next-line no-console
+  console.warn('[blobs] S3_ACCESS_KEY/S3_SECRET_KEY not set — attachments and avatar uploads are disabled');
+}
+
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
   // eslint-disable-next-line no-console
   console.log(`chatforge-api listening on http://localhost:${info.port}`);

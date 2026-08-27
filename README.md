@@ -16,7 +16,8 @@ See [`agents.md`](./agents.md) for the architecture decision log — the source 
 - **Web SPA** (`@chatforge/web`): drag-drop converter, auto-detect, preview report, download — 100% client-side.
 - **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery; MLS stubbed.
 - **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
-  server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Auth/storage are scaffolded for better-auth + Drizzle.
+  server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Identity via self-hosted **Logto** (OIDC),
+  data in Postgres/Drizzle, blobs in S3-compatible object storage.
 - **Infra**: multi-stage Dockerfiles (web → nginx-unprivileged, api → node:22), nginx CSP, `docker compose` (Postgres/MinIO/Mailpit), Dokploy notes.
 
 **Verified:** 18/18 tests green (core 8 · crypto 4 · api 6); all packages TypeScript-strict-clean; web builds.
