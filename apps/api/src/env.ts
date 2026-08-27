@@ -31,8 +31,11 @@ export interface S3Env {
 export function loadEnv(): Env {
   const port = Number(process.env.PORT ?? 8787);
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:4321';
-  const accessKey = process.env.S3_ACCESS_KEY ?? '';
-  const secretKey = process.env.S3_SECRET_KEY ?? '';
+  // The bundled MinIO's root credentials are the fallback, so the stack needs ONE credential pair
+  // rather than two that must be kept in sync by hand (getting that wrong fails every upload with
+  // an opaque SignatureDoesNotMatch). Explicit S3_* always wins — that's the external-S3 path.
+  const accessKey = process.env.S3_ACCESS_KEY || process.env.MINIO_ROOT_USER || '';
+  const secretKey = process.env.S3_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || '';
   const env: Env = {
     port,
     corsOrigin,

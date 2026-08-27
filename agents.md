@@ -29,16 +29,15 @@ access-control panel, real-time E2E chat, and native apps. Greenfield rewrite of
 ## Repository layout
 ```
 chatforge/
-├── agents.md                 # this file
+├── agents.md                 # this file — the ADR log (*why*)
+├── docs/                     # what exists now (*what*) — see docs/README.md
 ├── package.json              # npm workspaces root + turbo scripts
 ├── turbo.json · tsconfig.base.json
 ├── packages/
-│   ├── types/    @chatforge/types    — canonical model + DTOs (zod), enums, reports
+│   ├── types/    @chatforge/types    — canonical model + DTOs (zod), enums, reports, wire protocol
 │   ├── core/     @chatforge/core     — engine: contracts, registry, pipeline, importers, exporters
-│   ├── crypto/   @chatforge/crypto   — client E2E: key hierarchy, blob enc, MLS stubs
-│   ├── api-client/ @chatforge/api-client — typed client (OpenAPI) for web + native
-│   ├── ui/       @chatforge/ui       — shared React components (optional)
-│   └── config/   @chatforge/config   — shared tsconfig/eslint/tailwind presets
+│   └── crypto/   @chatforge/crypto   — client E2E: vault sealing + the MLS provider (ADR-0020)
+│   (api-client / ui / config were planned in M0 and never needed — don't look for them)
 ├── apps/
 │   ├── api/      @chatforge/api      — Hono + zod-openapi + Drizzle + Logto (ADR-0023)
 │   └── web/      @chatforge/web      — Vite + React SPA
@@ -294,6 +293,14 @@ size cap, SVG + lying-Content-Type rejection, owner-only delete, 503 without a s
 `turbo test typecheck` + web build. Migrations `0008` (drop the dead M4 `blobs` scaffolding) + `0009`
 (the real table). `MemoryChatRepo` now mints uuid conversation ids — the old `conv_N` doubles hid the
 route validation that production ids actually go through.
+**Amended 2026-08-27 (first production deploy):** two credentials that had to be kept in sync
+(`S3_SECRET_KEY` vs `MINIO_ROOT_PASSWORD`) was a bad design — the first real deploy failed with an
+opaque `SignatureDoesNotMatch` for exactly that reason. The API now **falls back to
+`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`** when `S3_ACCESS_KEY`/`S3_SECRET_KEY` are unset, so the
+bundled stack has one credential pair; explicit `S3_*` still wins for external S3. Measured footprint
+on the VPS: MinIO **~70 MB** RSS, not the ~250 MB budgeted. Also recorded: the compose file had never
+forwarded `LOGTO_*`/`APP_BASE_URL` to the api container — a variable set in Dokploy reaches a
+container only if that service's `environment:` block lists it.
 
 ---
 
@@ -340,4 +347,11 @@ against (2026-06-01):
 - [x] **Rich-chat roadmap P2 — profiles + live propagation + presence** — user `bio`/`about`/`statusEmoji`/`statusText` (+ existing `image`); `GET/POST /api/me/profile` (avatar URL/bio/about/status) **broadcasts a live `profile` frame** to conversation peers via a `chat/broadcast.ts` seam the gateway registers; `ConversationPeer` now carries name/username/image/status (Drizzle join in `listConversations`); **away** presence (`active` client frame on `visibilitychange` → `presence.state`); web: avatars (image/initials, `features/chat/Avatar.tsx`), custom status, online/away dots in the list + thread header, **display-as Name/Username/Email** preference (`lib/displayPref.ts`), fuller Settings profile editor. Migration `0006`.
 - [x] **Auth cutover to Logto (ADR-0023)** — all identity delegated to self-hosted Logto via a Traditional Web (confidential) client; server-side session in `logto_sessions`, browser holds only the opaque `cf_sid` cookie (REST **and** the WS upgrade resolve from it). `user` re-keyed on `logto_sub`; `account`/`passkey`/`session`/`verification` dropped (migration `0007`, clean cutover — requires an empty `user` table). better-auth + `jose` removed; ts-mls's MLS peer deps now declared explicitly. Docs: `docs/auth-logto.md`.
 - [x] **Rich-chat roadmap P3 — object storage, encrypted attachments, avatar uploads (ADR-0024)** — MinIO promoted out of the `dev` profile onto the VPS; `blobs` table + `/api/blobs` (upload attachment scoped to a conversation, upload avatar, download, delete) behind swappable `BlobStore` (S3/memory) + `BlobRepo` (Drizzle/memory). **Attachments are E2E**: fresh AES-256-GCM key per file in the browser, only ciphertext uploaded, key/name/MIME carried in the MLS payload (`t:'file'`); **avatars are plaintext profile data** by design. Web: 📎 button + drag-and-drop + paste-to-send, inline image previews, on-demand decrypt/Save for other files, avatar upload in Settings (replacing an avatar GCs the old blob). Server hardening: membership-gated reads answering 404-not-403, pre-buffer size caps, per-user quota + upload rate limit, magic-byte image allowlist (no SVG), `nosniff`/`default-src 'none'`; 503 when storage isn't configured. nginx `client_max_body_size 32m`. **12 new API tests** (33 total) + typecheck + web build green; migrations `0008`+`0009`.
+- [x] **Documentation set** (`docs/`) — `README.md` (index) + `architecture.md` (topology, the three
+  independent security layers, message flow, **an honest "what the server can and cannot see" table**,
+  seams) + `configuration.md` (every env var, where to set it in Dokploy, and the "compose must forward
+  it" rule) + `storage.md` (blob design, limits, ops, symptoms→cause) + `operations.md` (production
+  runbook) alongside the existing `auth-logto.md`. Root `README.md` refreshed (it still claimed MLS was
+  stubbed and 18 tests). Division of labour: **`agents.md` records *why* (append-only ADRs); `docs/`
+  describes *what exists now* (edited in place).**
 - [ ] Roadmap next: **P4** key-verification (MLS safety numbers) + Spotify "now playing" + settings hub. Also pending: attachment GC when a message is deleted, device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers.

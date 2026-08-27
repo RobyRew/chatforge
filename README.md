@@ -14,19 +14,36 @@ See [`agents.md`](./agents.md) for the architecture decision log — the source 
   - Every conversion produces a **fidelity report** (preserved / approximated / dropped).
   - Runs the **same engine** in the browser (Web Worker) and in Node (server sandbox).
 - **Web SPA** (`@chatforge/web`): drag-drop converter, auto-detect, preview report, download — 100% client-side.
-- **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery; MLS stubbed.
+- **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery,
+  and **real MLS (RFC 9420)** via `ts-mls` behind a bytes-only, swappable provider.
 - **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
   server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Identity via self-hosted **Logto** (OIDC),
   data in Postgres/Drizzle, blobs in S3-compatible object storage.
 - **Infra**: multi-stage Dockerfiles (web → nginx-unprivileged, api → node:22), nginx CSP, `docker compose` (Postgres/MinIO/Mailpit), Dokploy notes.
 
-**Verified:** 18/18 tests green (core 8 · crypto 4 · api 6); all packages TypeScript-strict-clean; web builds.
+## Documentation
+
+Full docs live in **[`docs/`](docs/)** — start at [docs/README.md](docs/README.md).
+
+| | |
+|---|---|
+| [architecture.md](docs/architecture.md) | How it fits together, and exactly what the server can and cannot see |
+| [configuration.md](docs/configuration.md) | Every environment variable, and where to set it |
+| [storage.md](docs/storage.md) | Attachments, avatars, MinIO, backups |
+| [auth-logto.md](docs/auth-logto.md) | Sign-in, sessions, roles |
+| [operations.md](docs/operations.md) | Production runbook — symptoms → causes → fixes |
+| [infra/dokploy/DEPLOY.md](infra/dokploy/DEPLOY.md) | Deploying to the VPS |
+| [agents.md](agents.md) | Decision log (ADRs) — *why* each choice was made |
+
+**Verified:** 65 tests green (core 25 · api 33 · crypto 7); all packages TypeScript-strict-clean; web builds.
 
 ## Not yet (next iteration)
-Web auth/dashboard/admin UI · api-client codegen from OpenAPI · Meta/Discord/Signal importers · live E2E chat (MLS) · native apps.
+MLS safety-number key verification · Spotify “now playing” status · api-client codegen from OpenAPI ·
+Meta/Discord/Signal importers · attachment garbage collection · native apps.
+(Running status lives at the bottom of [`agents.md`](./agents.md).)
 
 ## Layout
-`packages/{types,core,crypto,api-client,ui,config}` · `apps/{web,api}` · `infra/`
+`packages/{types,core,crypto}` · `apps/{web,api}` · `infra/` · `docs/`
 (full map in [`agents.md`](./agents.md)).
 
 ## Quickstart

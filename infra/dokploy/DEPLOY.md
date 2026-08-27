@@ -10,13 +10,13 @@ WebSocket, and blob uploads all **same-origin**, with no CORS/SameSite gymnastic
   browser ──https/wss──▶ │  /api/* , /ws  →  API (Hono :8787)               │
                          │  everything else →  web (nginx :8080, SPA)        │
                          └───────────────────────────────────────────────────┘
-   API ──▶ Postgres (accounts, chat metadata, ciphertext)   ──▶ object storage (encrypted blobs, CH-5)
+   API ──▶ Postgres (accounts, chat metadata, ciphertext)   ──▶ MinIO (encrypted attachments, avatars)
 ```
 
 ## 0. Prereqs
 - Repo is at **`github.com/RobyRew/chatforge`** (already pushed).
 - A Postgres database (Dokploy can provision one, or use the `postgres` service in compose).
-- Object storage only needed for CH-5 (attachments) — Backblaze B2 or a MinIO service.
+- Object storage for attachments/avatars — the bundled `minio` service, or any S3-compatible endpoint.
 
 ---
 
@@ -35,9 +35,10 @@ expose **only the web service** to the internet.
    - `ADMIN_EMAIL` — **first-run owner**: the first person to sign in with this email gets the `owner`
      role (once). Inert afterwards.
    - `POSTGRES_PASSWORD` (+ matching `DATABASE_URL`) — set a real secret.
-   - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` — set real secrets, **and set `S3_ACCESS_KEY` /
-     `S3_SECRET_KEY` to the same values** (the API authenticates to MinIO with them). Leave the S3 keys
-     blank to run without attachments/avatars — the blob routes then answer 503, nothing else breaks.
+   - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` — set real secrets. That's all: the API falls back to
+     these for object storage, so there is no second credential pair to keep in sync. Set
+     `S3_ACCESS_KEY` / `S3_SECRET_KEY` **only** to point at an external S3. Leave everything blank to
+     run without attachments/avatars — the blob routes answer 503 and nothing else breaks.
    In the **Logto console**, the app's redirect URI must be `https://chat.<domain>/api/auth/callback`
    and its post-sign-out URI `https://chat.<domain>`.
 4. **Deploy.** On boot the API runs `drizzle-kit migrate`, then **bootstraps** the built-in roles, then
@@ -45,13 +46,10 @@ expose **only the web service** to the internet.
 
 That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 
-> **Memory:** MinIO adds ~250 MB RSS. On a 2 GB VPS make sure swap is on before enabling it:
-> ```
-> sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-> sudo mkswap /swapfile && sudo swapon /swapfile
-> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-> ```
-> Also add MinIO's volume (`./.data/minio`) to your Restic backup set — attachments live only there.
+> **Memory:** MinIO measures ~70 MB RSS in this stack — lighter than its reputation. Swap on the VPS
+> is already provisioned by the Ansible `common` role (`swap_size_mb`), so there is nothing to do.
+> Add MinIO's volume (`./.data/minio`) to the Restic backup set — attachments live only there, and see
+> [docs/storage.md](../../docs/storage.md#where-the-bytes-live) for why that path needs care.
 > `minio/minio:latest` is unpinned; pin it to the digest you're running once it's confirmed working.
 
 ---
@@ -87,7 +85,8 @@ That's it — one public domain, internal Postgres/MinIO, auto-migrations.
 | API | `ADMIN_EMAIL` | first-run owner email (granted `owner` on first sign-in; then inert) |
 | API | `S3_ENDPOINT` | `http://minio:9000` in compose |
 | API | `S3_BUCKET` / `S3_REGION` | `chatforge` / `us-east-1` (created automatically on boot) |
-| API | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | must match `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`; blank = uploads disabled (503) |
+| API | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | bundled MinIO credentials — the API uses these by default |
+| API | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | only for external S3; overrides the MinIO pair. All blank = uploads disabled (503) |
 | API | `BLOB_QUOTA_BYTES` | per-user storage cap, default `536870912` (512 MB) |
 | Web (build arg) | `VITE_API_URL` | **leave unset** (same-origin). Only set for a split-origin deploy. |
 
@@ -108,14 +107,14 @@ All owned by **Logto** — configure them in the Logto console, not here. ChatFo
 4. Sign in as the bootstrap owner (`ADMIN_EMAIL`) → **`/dashboard`** then **`/admin`** → Users / Roles /
    Feature flags / Audit load; assign a role, delegate a permission.
 5. **Storage**: Settings → *Upload photo* (your avatar appears in chat), then in a DM attach a file with
-   📎 or drag-and-drop — an image should preview inline for both sides. If uploads 503, the API is
-   missing `S3_ACCESS_KEY`/`S3_SECRET_KEY`; if they 413 at ~1 MB, an upstream proxy is capping the body
-   (the bundled nginx allows 32 MB).
-5. Chat presence/typing/read once the CH-4 UI lands (the `/ws` transport is already live).
+   📎 or drag-and-drop — an image should preview inline for both sides. Troubleshooting table:
+   [docs/storage.md](../../docs/storage.md#symptoms--cause).
+6. **Chat**: open `/chat` in two browsers, start a DM by `@username` or email, and check presence,
+   typing and read receipts. Both sides must have opened `/chat` at least once to publish MLS keys.
 
 ## Notes
-- **RAM (2 GB VPS):** the API runs via `tsx`. To cut memory/startup, compile to JS (esbuild/tsup) for
-  prod later — optional. Postgres + API + nginx + MinIO alongside your existing stack (Beszel/Umami/
-  CrowdSec) is tight; watch memory.
-- **Backups:** extend Restic→B2 to cover the Postgres volume (accounts + chat) and the object-storage bucket.
+- **RAM (2 GB VPS):** the API runs via `tsx`. Compiling to JS (esbuild/tsup) for prod would cut
+  memory/startup — optional. Measured footprint: api ~25 MB, postgres ~15 MB, minio ~70 MB, web ~2 MB.
+- **Backups:** Restic→B2 must cover **both** `.data/postgres` and `.data/minio`. See
+  [docs/operations.md](../../docs/operations.md#backups).
 - **Secrets:** set via Dokploy env, never committed. The compose dev defaults are for local only.
