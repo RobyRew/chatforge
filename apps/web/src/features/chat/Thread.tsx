@@ -4,9 +4,11 @@ import { attachmentUrl, formatBytes, isRenderableImage, type AttachmentRef } fro
 import { chatClient, type ChatState, type UiMessage } from '../../lib/chatClient';
 import type { ReplyRef } from '../../lib/chatPayload';
 import { peerLabel } from '../../lib/displayPref';
+import { loadVerification, type VerificationStatus } from '../../lib/keyVerification';
 import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { ContextMenu, useLongPress } from './ContextMenu';
+import { VerifyKeys } from './VerifyKeys';
 
 const QUICK_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
@@ -23,6 +25,8 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
   const [menu, setMenu] = useState<{ seq: number; x: number; y: number } | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyStatus, setVerifyStatus] = useState<VerificationStatus>('unverified');
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -40,6 +44,17 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
       chatClient.markRead(conversation.id, lastSeq);
     }
   }, [messages, conversation.id]);
+
+  // Surface a changed key in the header without the user having to open the panel — a silent
+  // key swap is exactly what this feature exists to catch.
+  useEffect(() => {
+    if (!base) return;
+    let cancelled = false;
+    void loadVerification(conversation.id, base.id).then((v) => !cancelled && setVerifyStatus(v.status));
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation.id, base, messages.length]);
 
   const menuMsg = menu ? messages.find((m) => m.seq === menu.seq) : undefined;
 
@@ -79,7 +94,19 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
             {(peer?.statusEmoji || peer?.statusText) && ` · ${peer?.statusEmoji ?? ''} ${peer?.statusText ?? ''}`.trimEnd()}
           </p>
         </div>
-        <span className="ml-auto whitespace-nowrap text-xs text-zinc-600">🔒 end-to-end encrypted</span>
+        <button
+          className={`ml-auto whitespace-nowrap rounded-full border px-2 py-1 text-xs transition ${
+            verifyStatus === 'verified'
+              ? 'border-emerald-700/60 text-emerald-400 hover:border-emerald-500'
+              : verifyStatus === 'changed'
+                ? 'border-amber-600 text-amber-300 hover:border-amber-400'
+                : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
+          }`}
+          onClick={() => setVerifying(true)}
+          title="Compare safety numbers to confirm nobody is intercepting this chat"
+        >
+          {verifyStatus === 'verified' ? '✓ verified' : verifyStatus === 'changed' ? '⚠ key changed' : '🔒 verify keys'}
+        </button>
       </header>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
@@ -97,6 +124,18 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-xl border-2 border-dashed border-sky-500 bg-zinc-950/80">
           <p className="text-sm text-sky-300">Drop to send — encrypted before it leaves your browser</p>
         </div>
+      )}
+
+      {verifying && base && (
+        <VerifyKeys
+          conversationId={conversation.id}
+          peerId={base.id}
+          peerLabel={peer ? peerLabel(peer) : 'them'}
+          onClose={() => {
+            setVerifying(false);
+            void loadVerification(conversation.id, base.id).then((v) => setVerifyStatus(v.status));
+          }}
+        />
       )}
 
       {menu && menuMsg && (

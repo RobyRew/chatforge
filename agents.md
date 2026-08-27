@@ -310,6 +310,44 @@ outside the checkout where no git operation can reach it. **Postgres still has t
 (`./.data/postgres`) and is deliberately left alone: changing that line without copying the data in
 the same operation would point Postgres at an empty volume and present as total data loss.
 
+## ADR-0025 — P4: safety numbers, Spotify now-playing, settings hub (2026-08-28) · Accepted
+**Context:** Roadmap P4. Three unrelated features, but two share a question: *what is the server
+allowed to be trusted with?*
+**Decision:**
+- **Key verification via safety numbers.** The server relays the KeyPackages that bootstrap every
+  conversation, so it is the natural position for a man-in-the-middle. A 60-digit safety number
+  (`packages/crypto/src/safetyNumber.ts`) derived from both parties' MLS signature keys bound to
+  their user ids — iterated SHA-512 (5200 rounds, Signal's construction) so grinding a colliding
+  fingerprint costs far more than one hash — makes that attack detectable out-of-band. The MLS seam
+  grows one method, `groupMembers()`, returning the *authenticated* identity + signature key MLS
+  already verifies every message against. It is computed **inside the Web Worker**, so signature keys
+  never reach the main thread, and the verified state is stored **only on the device**: a
+  server-stored "verified" flag would be worthless, since the server is what the check is aimed at.
+  A previously-verified number that changes is surfaced loudly (usually a reinstall; also what
+  interception looks like) and never silently accepted.
+- **Spotify is read-only and server-side.** Scope is `user-read-currently-playing` and nothing else.
+  Tokens never reach the browser and are **encrypted at rest** (AES-256-GCM, HKDF from
+  `LOGTO_APP_SECRET` with a distinct info label) — the realistic threat is a leaked dump or backup,
+  not a live compromise, so keying off a secret the database never contains is what matters. Reusing
+  the existing app secret avoids adding another required deploy-time variable; the cost is that
+  rotating it invalidates stored tokens, which just means reconnecting.
+  The OAuth `state` is an **HMAC over `userId.expiry`** rather than stored session state: nothing to
+  clean up, unforgeable, expiring, and not re-pointable at another user. The callback trusts the
+  signed state for identity, **not** the session cookie, so a cross-session redirect cannot attach
+  someone else's account to your user.
+- **The poller polls only online users**, once a minute, sequentially — on a 2 GB VPS, polling every
+  account that ever connected is waste, and a status nobody is online to see is pointless. It records
+  the status it wrote, so it can distinguish "our stale status" (safe to replace) from "the user
+  typed their own" (leave it alone).
+- **Settings become a registry** (`features/settings/registry.ts`), mirroring the admin console:
+  adding a setting is one entry, and the nav follows. Adds a **Privacy** card stating plainly what is
+  and isn't encrypted — including that metadata is not.
+**Status:** Accepted. Verified: 6 crypto tests (incl. *both members of a real MLS DM derive the same
+number*, and that substituting a key or replaying it under another identity changes it) + 14 API
+tests (token sealing round-trip/tamper/wrong-secret, state forgery + payload-swap + wrong-secret
+rejection, routes 503/401 when unconfigured). **85 tests total**; typecheck + web build green.
+Migration `0010`. The live Spotify round trip needs real credentials and is untested here.
+
 ---
 
 # Conventions
@@ -362,4 +400,5 @@ against (2026-06-01):
   runbook) alongside the existing `auth-logto.md`. Root `README.md` refreshed (it still claimed MLS was
   stubbed and 18 tests). Division of labour: **`agents.md` records *why* (append-only ADRs); `docs/`
   describes *what exists now* (edited in place).**
-- [ ] Roadmap next: **P4** key-verification (MLS safety numbers) + Spotify "now playing" + settings hub. Also pending: attachment GC when a message is deleted, device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers.
+- [x] **Rich-chat roadmap P4 — key verification, Spotify, settings hub (ADR-0025)** — **safety numbers**: `MlsProvider.groupMembers()` + `@chatforge/crypto/safety-number` (60 digits, iterated SHA-512), computed in the Web Worker, verified state stored per-device only (IndexedDB v3), with a header badge that turns amber when a verified key changes. **Spotify now-playing**: read-only scope, server-side OAuth with an HMAC-signed `state`, tokens sealed at rest (`user_integrations`, migration `0010`), a poller that only runs for users with a live WebSocket and never clobbers a manual status. **Settings hub**: registry-driven sections (Profile / Chat / Privacy / Vault / Integrations) mirroring the admin console, plus a Privacy card that states plainly what is and isn't encrypted. 85 tests green; docs in `docs/integrations.md`.
+- [ ] Roadmap next: attachment GC when a message is deleted, device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers. **Ops gap: the `chatforge-minio` volume is not in the Restic backup set** (named volumes live outside `/etc` and `/opt`) — attachments exist nowhere else.

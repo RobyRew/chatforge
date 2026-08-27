@@ -9,6 +9,7 @@ import { blobsModule } from './modules/blobs';
 import { chatModule } from './modules/chat';
 import { conversionsModule } from './modules/conversions';
 import { convertModule } from './modules/convert';
+import { integrationsModule } from './modules/integrations';
 import { vaultModule } from './modules/vault';
 
 const healthRoute = createRoute({
@@ -50,6 +51,7 @@ export function createApp(): OpenAPIHono<Vars> {
   app.route('/api/conversions', conversionsModule);
   app.route('/api/vault', vaultModule); // saved imported chats (E2E ciphertext only)
   app.route('/api/blobs', blobsModule); // encrypted chat attachments + avatars (object storage)
+  app.route('/api/integrations', integrationsModule); // Spotify now-playing (tokens stay server-side)
   app.route('/api/admin', adminModule);
   app.route('/api/chat', chatModule);
 

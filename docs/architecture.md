@@ -51,7 +51,9 @@ These are often confused. They are separate, and each can fail without breaking 
    role ∪ allow − deny; `owner` is omnipotent and unlockable. Enforced **server-side on every route**;
    the UI only hides what the server already refuses.
 3. **Confidentiality** — *what can be read*. Client-side only. MLS (RFC 9420) for live chat, AES-GCM
-   for the vault and attachments. The server is not a participant and holds no keys.
+   for the vault and attachments. The server is not a participant and holds no keys. Because the
+   server *relays* the KeyPackages that bootstrap a conversation, it is the natural place for a
+   man-in-the-middle — which is what **safety numbers** exist to detect (see below).
 
 An admin has power over *accounts and features*, never over *content*. There is no "read messages"
 permission, because there is no mechanism that could implement one.
@@ -82,6 +84,19 @@ permission, because there is no mechanism that could implement one.
   pool topped up to 5. Starting a DM claims one (single-use, consumed under `FOR UPDATE SKIP LOCKED`),
   builds the group, and relays a self-contained *Welcome*. If a peer has never opened Chat they have no
   KeyPackages published, and the UI says so explicitly rather than failing obscurely.
+
+## Verifying keys (safety numbers)
+
+A conversation is bootstrapped through KeyPackages the server relays, so a malicious server could
+hand you *its* key instead of your peer's. It cannot fake a matching **safety number**: 60 digits
+derived (iterated SHA-512, Signal-style) from both parties' real MLS signature keys bound to their
+user ids. Compare it out-of-band and the channel is confirmed end-to-end.
+
+- Computed **inside the Web Worker** — signature keys never reach the main thread.
+- Verification is stored **only on that device**. A server-stored "verified" flag would be
+  meaningless, since the server is exactly what the check is aimed at.
+- If a previously-verified number changes, the UI says so loudly rather than accepting it silently.
+  Usually that means a reinstall or a new device; it is also what interception looks like.
 
 ## What the server can and cannot see
 

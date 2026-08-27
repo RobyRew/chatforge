@@ -33,7 +33,7 @@ services:
   minio:
     # Object storage for chat attachments + avatars (P3). Reached only over the compose network —
     # the published ports are localhost-only and Traefik has no route to it.
-    # Budget ~250 MB RSS on the VPS; make sure swap is enabled (see infra/dokploy/DEPLOY.md).
+    # Measures ~70 MB RSS on the VPS. Swap is provisioned by the Ansible `common` role.
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
@@ -83,6 +83,10 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-chatforge123}
       BLOB_QUOTA_BYTES: ${BLOB_QUOTA_BYTES:-536870912}
+      # Spotify "now playing" (optional). Redirect URI must be
+      # <APP_BASE_URL>/api/integrations/spotify/callback. Blank = integration disabled (503).
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
     ports: ['127.0.0.1:8787:8787']
     depends_on:
       postgres:

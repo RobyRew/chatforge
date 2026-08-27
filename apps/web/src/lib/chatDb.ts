@@ -9,7 +9,7 @@
  * the server never sees any of it.
  */
 const DB_NAME = 'chatforge-chat';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface StoredBundle {
   id?: number;
@@ -30,6 +30,12 @@ export interface StoredMessage {
   attachment?: import('./attachments').AttachmentRef;
 }
 
+/** A safety number the user confirmed out-of-band, so a later change can be detected. */
+export interface StoredVerification {
+  safetyNumber: string;
+  verifiedAt: number;
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
@@ -45,6 +51,7 @@ function openDb(): Promise<IDBDatabase> {
         store.createIndex('byConversation', 'conversationId', { unique: false });
       }
       if (!db.objectStoreNames.contains('cursors')) db.createObjectStore('cursors'); // conversationId -> last processed seq
+      if (!db.objectStoreNames.contains('verifications')) db.createObjectStore('verifications'); // conversationId -> StoredVerification
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'));
@@ -87,6 +94,12 @@ export function getMessages(conversationId: string): Promise<StoredMessage[]> {
       }),
   );
 }
+
+// ── verifications (main thread): the safety number the user last confirmed, per conversation ──
+export const getVerification = (conversationId: string): Promise<StoredVerification | undefined> =>
+  tx('verifications', 'readonly', (s) => s.get(conversationId) as IDBRequest<StoredVerification | undefined>);
+export const putVerification = (conversationId: string, v: StoredVerification): Promise<IDBValidKey> =>
+  tx('verifications', 'readwrite', (s) => s.put(v, conversationId));
 
 // ── cursors (main thread): highest server `seq` already processed per conversation ──
 export const getCursor = (conversationId: string): Promise<number | undefined> =>

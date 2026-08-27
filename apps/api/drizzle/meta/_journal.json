@@ -71,6 +71,13 @@
       "when": 1787795542214,
       "tag": "0009_blobs_store",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787869768272,
+      "tag": "0010_user_integrations",
+      "breakpoints": true
     }
   ]
 }

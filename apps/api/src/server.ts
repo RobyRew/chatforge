@@ -33,6 +33,9 @@ if (env.s3.configured) {
   console.warn('[blobs] S3_ACCESS_KEY/S3_SECRET_KEY not set — attachments and avatar uploads are disabled');
 }
 
+// Spotify "now playing": polls only users with a live WebSocket. No-op without credentials.
+void import('./integrations/nowPlaying').then(({ startNowPlayingPoller }) => startNowPlayingPoller());
+
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
   // eslint-disable-next-line no-console
   console.log(`chatforge-api listening on http://localhost:${info.port}`);

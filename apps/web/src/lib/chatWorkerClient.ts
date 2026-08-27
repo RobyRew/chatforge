@@ -38,4 +38,6 @@ export const chatWorker = {
     call({ id: rid(), type: 'encrypt', conversationId, payload }),
   decrypt: (conversationId: string, ciphertext: string): Promise<DecryptResult> =>
     call({ id: rid(), type: 'decrypt', conversationId, ciphertext }),
+  safetyNumber: (conversationId: string, peerId: string): Promise<{ number: string | null }> =>
+    call({ id: rid(), type: 'safetyNumber', conversationId, peerId }),
 };

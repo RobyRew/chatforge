@@ -100,6 +100,20 @@ export interface MlsProvider {
   encrypt(groupState: Uint8Array, plaintext: Uint8Array): Promise<EncryptResult>;
   /** Process inbound ciphertext; returns the plaintext (application) or just the advanced state (handshake). */
   decrypt(groupState: Uint8Array, ciphertext: Uint8Array): Promise<DecryptResult>;
+  /**
+   * The group's current members, as the *authenticated* identity + signature key that MLS itself
+   * uses to verify every message. This is the input to a safety number (P4): comparing it
+   * out-of-band is what detects a man-in-the-middle, because a substituted key changes it.
+   */
+  groupMembers(groupState: Uint8Array): Promise<MlsMember[]>;
+}
+
+/** One member of a group, as recorded in the ratchet tree's leaf node. */
+export interface MlsMember {
+  /** Credential identity — for us, the user id passed to `generateKeyPackage`. */
+  identity: Uint8Array;
+  /** The Ed25519 public key MLS verifies this member's messages against. */
+  signatureKey: Uint8Array;
 }
 
 // ── byte packing for the private KeyPackage (ts-mls has no wire encoder for it) ──
@@ -273,6 +287,20 @@ class TsMlsProvider implements MlsProvider {
       return { type: 'application', groupState: serializeState(result.newState), plaintext: result.message };
     }
     return { type: 'handshake', groupState: serializeState(result.newState) };
+  }
+
+  groupMembers(groupState: Uint8Array): Promise<MlsMember[]> {
+    const state = deserializeState(groupState);
+    const members: MlsMember[] = [];
+    // The ratchet tree interleaves parent and leaf nodes and contains blanks for removed members;
+    // only populated leaves are current members.
+    for (const node of state.ratchetTree) {
+      if (!node || node.nodeType !== 'leaf') continue;
+      const { credential, signaturePublicKey } = node.leaf;
+      if (credential.credentialType !== 'basic') continue; // we only issue basic credentials
+      members.push({ identity: credential.identity, signatureKey: signaturePublicKey });
+    }
+    return Promise.resolve(members);
   }
 }
 

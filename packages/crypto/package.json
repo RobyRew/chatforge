@@ -6,7 +6,8 @@
   "description": "Client-side E2E crypto: Argon2id key hierarchy, XChaCha20-Poly1305 blob sealing, BIP39 recovery, MLS (ts-mls) provider.",
   "exports": {
     ".": "./src/index.ts",
-    "./mls": "./src/mls.ts"
+    "./mls": "./src/mls.ts",
+    "./safety-number": "./src/safetyNumber.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

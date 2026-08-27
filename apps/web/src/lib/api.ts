@@ -77,6 +77,9 @@ export interface VaultItemFull extends VaultItem {
   ciphertext: string;
   salt: string | null;
 }
+export interface Integrations {
+  spotify: { available: boolean; connected: boolean };
+}
 export interface AdminUser {
   id: string;
   email: string;
@@ -169,6 +172,9 @@ export const api = {
       post('/api/chat/welcomes', { conversationId, recipientId, welcome }),
     ackWelcome: (id: string): Promise<{ ok: boolean }> => del(`/api/chat/welcomes/${id}`),
   },
+
+  integrations: (): Promise<Integrations> => get<Integrations>('/api/integrations'),
+  disconnectSpotify: (): Promise<{ ok: boolean }> => del('/api/integrations/spotify'),
 
   blobs: {
     /**

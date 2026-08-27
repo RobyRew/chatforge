@@ -87,6 +87,33 @@ export const userPresence = pgTable('user_presence', {
 });
 
 /**
+ * Third-party integrations per user (P4) — currently Spotify "now playing".
+ *
+ * OAuth tokens are stored **encrypted at rest** (AES-256-GCM, key derived from `LOGTO_APP_SECRET`)
+ * so a leaked database dump does not hand over access to the user's Spotify account. `statusText`
+ * records the status *we* last wrote, so the poller can tell "the user changed their status by
+ * hand" (leave it alone) from "our own stale status" (safe to replace or clear).
+ */
+export const userIntegrations = pgTable(
+  'user_integrations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(), // 'spotify'
+    accessToken: text('access_token').notNull(), // sealed
+    refreshToken: text('refresh_token').notNull(), // sealed
+    expiresAt: timestamp('expires_at').notNull(),
+    /** The status string this integration last set, so we never clobber a manual one. */
+    lastStatusText: text('last_status_text'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => ({ uqUserProvider: unique('user_integrations_user_provider').on(t.userId, t.provider) }),
+);
+
+/**
  * Registry of stored blobs (P3); the bytes themselves live in S3/MinIO under `objectKey`.
  *
  * `kind='attachment'` — a chat attachment. The bytes are **client-side encrypted** before upload

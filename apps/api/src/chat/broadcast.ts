@@ -16,3 +16,19 @@ export function setBroadcaster(b: Broadcaster | null): void {
 export function broadcastToPeers(userId: string, frame: ServerFrame): void {
   current?.(userId, frame);
 }
+
+/**
+ * Seam for "who currently has a live connection". Used by the Spotify poller so it only polls for
+ * people actually using the app — on a small VPS, polling every account forever is wasted work.
+ */
+type OnlineLister = () => string[];
+
+let lister: OnlineLister | null = null;
+
+export function setOnlineLister(l: OnlineLister | null): void {
+  lister = l;
+}
+
+export function onlineUserIds(): string[] {
+  return lister?.() ?? [];
+}

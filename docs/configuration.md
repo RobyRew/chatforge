@@ -72,6 +72,17 @@ of the app is unaffected. That's a supported way to run ChatForge, not a broken 
 
 See [storage.md](storage.md) for how blobs actually work and how to back them up.
 
+## Integrations (optional)
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | no | Enables the "now playing" status. Blank = the integration reports itself unavailable and its routes answer 503 |
+
+The redirect URI in the Spotify dashboard must be `<APP_BASE_URL>/api/integrations/spotify/callback`,
+matched exactly. Tokens are encrypted at rest with a key derived from `LOGTO_APP_SECRET` — **rotating
+that secret invalidates stored integration tokens** and users must reconnect. See
+[integrations.md](integrations.md).
+
 ## Web
 
 | Variable | Required | Meaning |

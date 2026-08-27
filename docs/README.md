@@ -8,6 +8,7 @@ Start here. Each page answers one kind of question.
 | Know what every environment variable does, and where to set it | [configuration.md](configuration.md) |
 | Understand attachments, avatars and MinIO — including backups | [storage.md](storage.md) |
 | Understand sign-in, sessions and roles | [auth-logto.md](auth-logto.md) |
+| Connect Spotify (or add another integration) | [integrations.md](integrations.md) |
 | Deploy or redeploy to the VPS | [../infra/dokploy/DEPLOY.md](../infra/dokploy/DEPLOY.md) |
 | Fix something that's broken in production | [operations.md](operations.md) |
 | Know *why* a technical decision was made | [../agents.md](../agents.md) — the ADR log |

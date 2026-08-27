@@ -5,6 +5,7 @@
  * serially so the MLS ratchet is never mutated concurrently.
  */
 import { createMlsProvider, type MlsProvider } from '@chatforge/crypto/mls';
+import { safetyNumber } from '@chatforge/crypto/safety-number';
 import { addBundle, allBundles, deleteBundle, getGroup, putGroup } from '../lib/chatDb';
 import type { ChatWorkerRequest, ChatWorkerResponse } from '../lib/chatProtocol';
 
@@ -76,6 +77,18 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
       const out = await m.encrypt(state, enc.encode(req.payload));
       await putGroup(req.conversationId, out.groupState);
       return { ciphertext: toB64(out.ciphertext) };
+    }
+    case 'safetyNumber': {
+      // Computed here, in the worker, so signature keys never reach the main thread. The number
+      // depends only on the two members' MLS identity keys — the same values MLS itself verifies
+      // messages against — so a substituted key changes it. That is the MITM check.
+      const state = await getGroup(req.conversationId);
+      if (!state) throw new Error('no group state for conversation');
+      const members = await m.groupMembers(state);
+      const self = members.find((x) => dec.decode(x.identity) === userId);
+      const peer = members.find((x) => dec.decode(x.identity) === req.peerId);
+      if (!self || !peer) return { number: null };
+      return { number: await safetyNumber(self, peer) };
     }
     case 'decrypt': {
       const state = await getGroup(req.conversationId);
