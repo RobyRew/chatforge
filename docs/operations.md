@@ -53,13 +53,32 @@ sudo docker ps --filter name=chatforge --format '{{.Names}}\t{{.Status}}'
 
 ## Backups
 
-Restic → Backblaze B2, driven by the `backup` role in the infrastructure repo. Two things live on
-disk and must both be in the backup set:
+Restic → Backblaze B2, driven by the `backup` role in the infrastructure repo. The database is
+captured as a nightly logical dump, not as a hot data directory:
 
-- `/etc/dokploy/compose/<app>/code/.data/postgres` — the database
-- `/etc/dokploy/compose/<app>/code/.data/minio` — every attachment and avatar
+```bash
+sudo /opt/scripts/dump-chatforge-db.sh      # pg_dumpall → /opt/backups/db-dumps/
+sudo ls -lht /opt/backups/db-dumps/         # last 3 kept locally; Restic holds the history
+```
 
-See [storage.md](storage.md#where-the-bytes-live) for why that path is riskier than it looks.
+That dump is what saved the database on 2026-08-27 — keep it working. The script fails loudly if the
+dump comes back empty, which is deliberate: a silent no-op would leave the snapshot with no usable
+copy.
+
+**Restic must also cover the MinIO volume** (`chatforge-minio`) — attachments exist nowhere else and
+are not in any logical dump.
+
+### Restoring the database
+
+```bash
+DUMP=/opt/backups/db-dumps/chatforge_<stamp>.sql.gz
+sudo docker stop <api-container>                                  # keep migrations from racing
+sudo sh -c "zcat $DUMP | docker exec -i <pg-container> psql -U chatforge -d postgres"
+sudo docker start <api-container>                                 # applies any newer migrations
+```
+
+Restoring an older dump is safe with respect to schema drift: Drizzle's migration table is inside the
+dump, so the API applies whatever migrations came after it on the next start.
 
 ## Common failures
 

@@ -77,11 +77,15 @@ It did not start that way, and the reason it changed is worth knowing.
 >
 > A named volume lives outside the checkout, so no git operation can touch it. That is the fix.
 
-> **⚠ Postgres is still on a bind mount** (`./.data/postgres`) and carries the *same* exposure. It
-> cannot simply be switched: changing the compose line alone would point Postgres at an empty volume
-> and look exactly like total data loss. Migrating requires copying the existing data in the same
-> operation, with a `pg_dump` taken first. Until then, treat a "clean"/re-clone deploy as dangerous
-> and make sure backups are current.
+> **Postgres hit the same bug, for real, the same day.** It was on `./.data/postgres`. A deploy
+> refreshed the checkout and deleted the live PGDATA out from under the running server. Postgres kept
+> answering queries from its open file handles and shared buffers — its healthcheck stayed green — and
+> only failed once it needed a file that wasn't cached (`could not open file "global/pg_filenode.map"`).
+> It is now on the named volume `chatforge-postgres`, restored from the nightly `pg_dumpall`.
+>
+> The lesson generalises: **never put a database or object store on a path inside a directory your
+> deploy tool manages.** And note how quiet both failures were — a green healthcheck and a successful
+> `HeadBucket` while the underlying storage no longer existed.
 
 Restic must cover the database **and** the MinIO volume — attachments exist nowhere else.
 
