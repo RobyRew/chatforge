@@ -19,6 +19,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatforge}
       POSTGRES_DB: ${POSTGRES_DB:-chatforge}
     ports: ['127.0.0.1:5432:5432']
+    # ⚠ Same exposure as MinIO had (see the note on the minio service): this bind lives inside the
+    # deploy checkout. Moving it to a named volume requires copying the existing data in the same
+    # operation — changing this line alone would point Postgres at an EMPTY volume and look like
+    # total data loss. See docs/storage.md#where-the-bytes-live before touching it.
     volumes: ['./.data/postgres:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-chatforge}']
@@ -36,7 +40,12 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-chatforge123}
     ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
-    volumes: ['./.data/minio:/data']
+    # NAMED VOLUME, not a bind mount under the repo. A relative bind lands inside the directory the
+    # deploy tool checks the repo out into — and a refresh there deleted this directory out from
+    # under a running MinIO in production (2026-08-27), leaving it writing to a phantom path and
+    # failing every upload with "Resource requested is unreadable". A named volume lives in
+    # /var/lib/docker/volumes and no git operation can touch it.
+    volumes: ['chatforge-minio:/data']
 
   mailpit:
     image: axllent/mailpit:latest
@@ -87,3 +96,6 @@ services:
       dockerfile: infra/web.Dockerfile
     ports: ['127.0.0.1:4321:8080']
     depends_on: [api]
+
+volumes:
+  chatforge-minio:

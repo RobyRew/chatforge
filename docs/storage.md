@@ -59,19 +59,31 @@ from the app's own origin.
 
 ### Where the bytes live
 
-In the bundled stack, MinIO stores objects on a bind mount inside the deployed checkout:
+**MinIO uses a named Docker volume, `chatforge-minio`** (`/var/lib/docker/volumes/...`).
 
+```bash
+sudo docker volume inspect chatforge-minio
+sudo du -sh /var/lib/docker/volumes/tools-chatforge-*_chatforge-minio/_data
 ```
-/etc/dokploy/compose/<app>/code/.data/minio
-```
 
-Postgres uses the same pattern (`.data/postgres`).
+It did not start that way, and the reason it changed is worth knowing.
 
-> **⚠ Back this up, and understand the risk.** `.data/` lives inside the directory Dokploy manages for
-> the repository checkout. A normal redeploy (a `git pull`) leaves it alone, but a **"clean" redeploy
-> that re-clones the directory would destroy both the database and every attachment.** Add
-> `.data/` to the Restic backup set, and prefer named Docker volumes if you want this risk gone
-> entirely rather than merely mitigated.
+> **This already bit us once (2026-08-27).** MinIO originally used a *relative bind mount*,
+> `./.data/minio`, which resolves to a path **inside the directory Dokploy checks the repository out
+> into**. A deploy refreshed that checkout and deleted the directory out from under the running
+> container. MinIO kept running against a deleted inode: the bucket still answered `HeadBucket`, but
+> every write failed with `SlowDownRead — Resource requested is unreadable`. Nothing in the API log
+> said "your storage is gone", because from the API's point of view the bucket existed.
+>
+> A named volume lives outside the checkout, so no git operation can touch it. That is the fix.
+
+> **⚠ Postgres is still on a bind mount** (`./.data/postgres`) and carries the *same* exposure. It
+> cannot simply be switched: changing the compose line alone would point Postgres at an empty volume
+> and look exactly like total data loss. Migrating requires copying the existing data in the same
+> operation, with a `pg_dump` taken first. Until then, treat a "clean"/re-clone deploy as dangerous
+> and make sure backups are current.
+
+Restic must cover the database **and** the MinIO volume — attachments exist nowhere else.
 
 ### Checking it's healthy
 

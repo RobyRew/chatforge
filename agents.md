@@ -301,6 +301,14 @@ bundled stack has one credential pair; explicit `S3_*` still wins for external S
 on the VPS: MinIO **~70 MB** RSS, not the ~250 MB budgeted. Also recorded: the compose file had never
 forwarded `LOGTO_*`/`APP_BASE_URL` to the api container — a variable set in Dokploy reaches a
 container only if that service's `environment:` block lists it.
+**Amended again 2026-08-27 (storage volume):** MinIO's `./.data/minio` was a *relative bind mount*,
+which resolves inside the directory Dokploy checks the repo out into. A deploy refreshed that
+checkout and deleted the directory under the running container; MinIO kept serving `HeadBucket` from
+a deleted inode while every write failed `SlowDownRead — Resource requested is unreadable`, and
+nothing in the API log said storage was gone. MinIO now uses the **named volume `chatforge-minio`**,
+outside the checkout where no git operation can reach it. **Postgres still has the same exposure**
+(`./.data/postgres`) and is deliberately left alone: changing that line without copying the data in
+the same operation would point Postgres at an empty volume and present as total data loss.
 
 ---
 
