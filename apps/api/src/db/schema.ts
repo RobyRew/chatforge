@@ -73,8 +73,11 @@ export const chatMessages = pgTable(
       .notNull()
       .references(() => user.id),
     seq: integer('seq').notNull(),
-    ciphertext: text('ciphertext').notNull(), // opaque base64 (MLS in CH-3)
+    ciphertext: text('ciphertext').notNull(), // opaque base64 (MLS in CH-3); '' once deleted
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    // Deleting blanks the ciphertext but keeps the row: `seq` is the shared id replies and
+    // reactions reference, and removing it would leave dangling references and a hole in the order.
+    deletedAt: timestamp('deleted_at'),
   },
   (t) => ({ uqSeq: unique('chat_messages_conv_seq').on(t.conversationId, t.seq) }),
 );
@@ -136,9 +139,17 @@ export const blobs = pgTable(
     contentType: text('content_type'), // avatars only; NULL for opaque attachment ciphertext
     objectKey: text('object_key').notNull(),
     size: integer('size').notNull().default(0),
+    /**
+     * The message this blob is attached to, once sent. NULL means "uploaded but never referenced" —
+     * either still in flight or an abandoned upload, which the sweeper reclaims after a grace period.
+     */
+    messageSeq: integer('message_seq'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (t) => ({ byOwner: index('blobs_owner_idx').on(t.ownerId) }),
+  (t) => ({
+    byOwner: index('blobs_owner_idx').on(t.ownerId),
+    byMessage: index('blobs_message_idx').on(t.conversationId, t.messageSeq),
+  }),
 );
 
 /**

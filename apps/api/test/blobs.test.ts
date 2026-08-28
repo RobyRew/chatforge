@@ -4,7 +4,7 @@ import { setAdminRepo } from '../src/admin/repo';
 import { createApp } from '../src/app';
 import { MemoryChatRepo } from '../src/chat/memoryRepo';
 import { setChatRepo } from '../src/chat/repo';
-import { MemoryBlobRepo, setBlobRepo } from '../src/storage/blobRepo';
+import { getBlobRepo, MemoryBlobRepo, setBlobRepo } from '../src/storage/blobRepo';
 import { MemoryBlobStore, setBlobStore } from '../src/storage/blobStore';
 import { stores } from '../src/stores';
 
@@ -130,5 +130,55 @@ describe('blobs — lifecycle', () => {
   it('answers 503 instead of accepting uploads it cannot persist', async () => {
     setBlobStore(null);
     expect((await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, OWNER)).status).toBe(503);
+  });
+});
+
+describe('blobs — garbage collection', () => {
+  it('reclaims a message attachment when the message is deleted', async () => {
+    const { id } = await json<{ id: string }>(await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, OWNER));
+    const msg = await chat.appendMessage(conversationId, 'u_owner', 'ct');
+    await getBlobRepo().linkToMessage([id], 'u_owner', conversationId, msg.seq);
+
+    expect(await chat.deleteMessage(conversationId, msg.seq, 'u_owner')).toBe(true);
+    const { deleteBlobsForMessage } = await import('../src/storage/blobGc');
+    expect(await deleteBlobsForMessage(conversationId, msg.seq)).toBe(1);
+
+    expect((await send(`/api/blobs/${id}`, 'GET', OWNER)).status).toBe(404);
+  });
+
+  it('refuses to delete someone else’s message', async () => {
+    const msg = await chat.appendMessage(conversationId, 'u_owner', 'ct');
+    expect(await chat.deleteMessage(conversationId, msg.seq, 'u_user')).toBe(false);
+    expect(await chat.deleteMessage(conversationId, msg.seq, 'u_owner')).toBe(true);
+    expect(await chat.deleteMessage(conversationId, msg.seq, 'u_owner')).toBe(false); // already gone
+  });
+
+  it('links only the sender’s own unattached blobs — an id belonging to someone else is ignored', async () => {
+    const mine = await json<{ id: string }>(await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, OWNER));
+    const theirs = await json<{ id: string }>(await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, USER));
+    const repo = getBlobRepo();
+    // u_owner tries to claim u_user's blob alongside its own.
+    await repo.linkToMessage([mine.id, theirs.id], 'u_owner', conversationId, 7);
+    const linked = await repo.listForMessage(conversationId, 7);
+    expect(linked.map((b) => b.id)).toEqual([mine.id]);
+  });
+
+  it('sweeps abandoned uploads but spares recent and attached ones', async () => {
+    const repo = getBlobRepo();
+    const recent = await json<{ id: string }>(await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, OWNER));
+    const attached = await json<{ id: string }>(await upload(`/api/blobs/attachments/${conversationId}`, CIPHERTEXT, OWNER));
+    await repo.linkToMessage([attached.id], 'u_owner', conversationId, 42);
+
+    // Nothing is old enough yet.
+    const { sweepOrphans } = await import('../src/storage/blobGc');
+    expect(await sweepOrphans()).toBe(0);
+    expect(await repo.get(recent.id)).not.toBeNull();
+
+    // Age the unattached one past the grace period.
+    const rec = await repo.get(recent.id);
+    (rec as { createdAt: number }).createdAt = Date.now() - 7 * 60 * 60 * 1000;
+    expect(await sweepOrphans()).toBe(1);
+    expect(await repo.get(recent.id)).toBeNull();
+    expect(await repo.get(attached.id)).not.toBeNull(); // attached is never swept
   });
 });

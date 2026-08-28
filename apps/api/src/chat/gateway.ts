@@ -186,6 +186,25 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
                 );
               }
               send(ws, { t: 'delivered', conversationId: frame.conversationId, clientId: frame.clientId, seq: msg.seq });
+              // Record which blobs this message carries so deleting it can reclaim them. The repo
+              // only links the sender's own, unattached, same-conversation blobs, so naming
+              // someone else's id here achieves nothing.
+              if (frame.blobIds?.length) {
+                const { getBlobRepo } = await import('../storage/blobRepo');
+                await getBlobRepo().linkToMessage(frame.blobIds, uid, frame.conversationId, msg.seq).catch(() => undefined);
+              }
+            } else if (frame.t === 'delete') {
+              // Sender-only, enforced in the repo's WHERE clause rather than by a read-then-write.
+              const deleted = await repo.deleteMessage(frame.conversationId, frame.seq, uid);
+              if (!deleted) {
+                send(ws, { t: 'error', message: 'cannot delete that message' });
+                return;
+              }
+              const { deleteBlobsForMessage } = await import('../storage/blobGc');
+              await deleteBlobsForMessage(frame.conversationId, frame.seq);
+              for (const m of await repo.memberIds(frame.conversationId)) {
+                sendTo(m, { t: 'deleted', conversationId: frame.conversationId, seq: frame.seq, by: uid });
+              }
             } else if (frame.t === 'typing') {
               for (const m of await repo.memberIds(frame.conversationId)) {
                 if (m !== uid) sendTo(m, { t: 'typing', conversationId: frame.conversationId, userId: uid });

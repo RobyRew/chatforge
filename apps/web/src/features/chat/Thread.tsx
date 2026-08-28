@@ -160,9 +160,16 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
             </div>
           }
           items={[
-            { label: 'Reply', onClick: () => setReplyTo({ seq: menu.seq, text: menuMsg.text || (menuMsg.attachment ? `📎 ${menuMsg.attachment.name}` : ''), senderId: menuMsg.senderId }) },
-            ...(menuMsg.text ? [{ label: 'Copy text', onClick: () => void navigator.clipboard?.writeText(menuMsg.text) }] : []),
-            ...(menuMsg.attachment ? [{ label: 'Save file', onClick: () => void saveAttachment(menuMsg.attachment!) }] : []),
+            ...(menuMsg.deleted
+              ? []
+              : [
+                  { label: 'Reply', onClick: () => setReplyTo({ seq: menu.seq, text: menuMsg.text || (menuMsg.attachment ? `📎 ${menuMsg.attachment.name}` : ''), senderId: menuMsg.senderId }) },
+                  ...(menuMsg.text ? [{ label: 'Copy text', onClick: () => void navigator.clipboard?.writeText(menuMsg.text) }] : []),
+                  ...(menuMsg.attachment ? [{ label: 'Save file', onClick: () => void saveAttachment(menuMsg.attachment!) }] : []),
+                  // Only my own messages can be unsent — the server enforces this too.
+                  ...(menuMsg.mine ? [{ label: 'Delete for everyone', onClick: () => chatClient.deleteMessage(conversation.id, menu.seq) }] : []),
+                ]),
+            { label: 'Remove for me', onClick: () => void chatClient.hideMessage(conversation.id, menu.seq) },
           ]}
         />
       )}
@@ -180,14 +187,20 @@ function Bubble({ m, read, myId, conversationId, onMenu }: { m: UiMessage; read:
         <div {...press} className={`rounded-2xl px-3 py-2 text-sm ${m.mine ? 'bg-sky-600 text-white' : 'bg-zinc-800 text-zinc-100'} ${m.pending ? 'opacity-60' : ''}`}>
           {m.replyTo && <div className="mb-1 border-l-2 border-white/40 pl-2 text-xs opacity-80">↩ {m.replyTo.text.slice(0, 80)}</div>}
           {m.uploading && <p className="py-1 text-xs opacity-80">🔐 Encrypting &amp; uploading…</p>}
-          {m.attachment && <Attachment att={m.attachment} mine={m.mine} />}
-          {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+          {m.deleted ? (
+            <p className="italic opacity-70">🚫 This message was deleted</p>
+          ) : (
+            <>
+              {m.attachment && <Attachment att={m.attachment} mine={m.mine} />}
+              {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+            </>
+          )}
           <p className={`mt-0.5 text-[10px] ${m.mine ? 'text-sky-200' : 'text-zinc-500'}`}>
             {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             {m.mine && (m.pending ? ' · …' : read ? ' · ✓✓' : ' · ✓')}
           </p>
         </div>
-        {m.reactions && m.reactions.length > 0 && (
+        {!m.deleted && m.reactions && m.reactions.length > 0 && (
           <div className={`flex flex-wrap gap-1 ${m.mine ? 'justify-end' : ''}`}>
             {m.reactions.map((r) => (
               <button

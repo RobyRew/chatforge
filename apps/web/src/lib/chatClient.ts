@@ -1,7 +1,7 @@
 import type { ChatMessageDTO, ClientFrame, ConversationPeer, ConversationSummary, PresenceState, ServerFrame } from '@chatforge/types';
 import { ApiError, api } from './api';
 import { encryptAndUpload, type AttachmentRef } from './attachments';
-import { getCursor, getMessages, putMessage, setCursor, type StoredMessage } from './chatDb';
+import { deleteMessage as dbDeleteMessage, getCursor, getMessages, putMessage, setCursor, type StoredMessage } from './chatDb';
 import { encodeFile, encodeMsg, encodeReaction, parsePayload, type ReplyRef } from './chatPayload';
 import { chatWorker } from './chatWorkerClient';
 import { notify } from './notifications';
@@ -26,6 +26,8 @@ export interface UiMessage {
   attachment?: AttachmentRef;
   /** Set on an outgoing message while its file is still encrypting/uploading. */
   uploading?: boolean;
+  /** Deleted for everyone — rendered as a tombstone; the plaintext is gone from this device. */
+  deleted?: boolean;
 }
 
 export interface ChatState {
@@ -172,6 +174,11 @@ class ChatClient {
       await setCursor(conversationId, m.seq); // our own send — already applied locally
       return true;
     }
+    if (!m.ciphertext || m.deletedAt) {
+      // Deleted for everyone before this device ever fetched it — nothing to decrypt.
+      await setCursor(conversationId, m.seq);
+      return true;
+    }
     try {
       const res = await chatWorker.decrypt(conversationId, m.ciphertext);
       if (res.kind === 'application') {
@@ -258,7 +265,8 @@ class ChatClient {
       const ref = await encryptAndUpload(file, conversationId);
       this.updateById(conversationId, clientId, (m) => ({ ...m, attachment: ref, uploading: false }));
       const { ciphertext } = await chatWorker.encrypt(conversationId, encodeFile(ref, caption, replyTo));
-      this.wsSend({ t: 'send', conversationId, ciphertext, clientId });
+      // Tell the server which blob this message carries so deleting it reclaims the file.
+      this.wsSend({ t: 'send', conversationId, ciphertext, clientId, blobIds: [ref.blobId] });
     } catch (e) {
       this.removeById(conversationId, clientId); // nothing was sent — drop the optimistic bubble
       this.emit({ error: e instanceof Error ? e.message : String(e) });
@@ -326,7 +334,20 @@ class ChatClient {
     const next = [...list];
     next[idx] = updated;
     this.setMessages(conversationId, next);
-    if (updated.seq !== null) void putMessage(this.toStored(updated));
+    // A deleted message must never be written back to the cache we just purged.
+    if (updated.seq !== null && !updated.deleted) void putMessage(this.toStored(updated));
+  }
+
+  /** Delete one of my own messages for everyone. The server refuses if it isn't mine. */
+  deleteMessage(conversationId: string, seq: number): void {
+    this.wsSend({ t: 'delete', conversationId, seq });
+  }
+
+  /** Remove a message from this device only, leaving the peer's copy alone. */
+  async hideMessage(conversationId: string, seq: number): Promise<void> {
+    await dbDeleteMessage(conversationId, seq).catch(() => undefined);
+    const list = this.state.messages[conversationId];
+    if (list) this.setMessages(conversationId, list.filter((m) => m.seq !== seq));
   }
 
   sendTyping(conversationId: string): void {
@@ -398,6 +419,11 @@ class ChatClient {
         this.emit({ profiles: { ...this.state.profiles, [f.userId]: next } });
         break;
       }
+      case 'deleted':
+        // Drop the cached plaintext too — otherwise "delete for everyone" would only hide it.
+        void dbDeleteMessage(f.conversationId, f.seq);
+        this.updateMessage(f.conversationId, f.seq, (m) => ({ ...m, text: '', deleted: true, replyTo: undefined, attachment: undefined, reactions: [] }));
+        break;
       case 'read':
         this.emit({ peerRead: { ...this.state.peerRead, [f.conversationId]: f.seq } });
         break;

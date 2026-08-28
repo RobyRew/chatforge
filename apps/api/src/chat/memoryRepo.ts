@@ -120,4 +120,12 @@ export class MemoryChatRepo implements ChatRepo {
   async deleteWelcome(id: string, recipientId: string): Promise<void> {
     this.welcomes = this.welcomes.filter((w) => !(w.id === id && w.recipientId === recipientId));
   }
+
+  async deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean> {
+    const msg = (this.msgs.get(conversationId) ?? []).find((m) => m.seq === seq);
+    if (!msg || msg.senderId !== requesterId || msg.deletedAt) return false;
+    msg.ciphertext = '';
+    msg.deletedAt = Date.now();
+    return true;
+  }
 }

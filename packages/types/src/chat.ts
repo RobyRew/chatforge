@@ -18,7 +18,15 @@ export const ClientFrameSchema = z.discriminatedUnion('t', [
     conversationId: convId,
     ciphertext: z.string().min(1).max(MAX_CIPHERTEXT),
     clientId: z.string().min(1).max(64),
+    /**
+     * Ids of blobs this message references. The server cannot read the ciphertext, so it cannot
+     * discover the link itself — without it, deleting a message could never reclaim its attachment.
+     * The ids are already server-known (it stored them), so this leaks nothing new; ownership and
+     * conversation scope are re-checked before anything is linked.
+     */
+    blobIds: z.array(z.string().uuid()).max(10).optional(),
   }),
+  z.object({ t: z.literal('delete'), conversationId: convId, seq: z.number().int().positive().max(2_000_000_000) }),
   z.object({ t: z.literal('typing'), conversationId: convId }),
   z.object({ t: z.literal('read'), conversationId: convId, seq: z.number().int().nonnegative().max(2_000_000_000) }),
   z.object({ t: z.literal('active'), away: z.boolean() }), // client-reported idle/away state
@@ -35,6 +43,8 @@ export type ServerFrame =
   | { t: 'read'; conversationId: string; userId: string; seq: number }
   // Live profile/status update fanned out to a user's conversation peers (server-known metadata).
   | { t: 'profile'; userId: string; name?: string | null; username?: string | null; email?: string; image?: string | null; statusEmoji?: string | null; statusText?: string | null }
+  // A message was deleted for everyone. Clients drop their local plaintext cache for that `seq`.
+  | { t: 'deleted'; conversationId: string; seq: number; by: string }
   | { t: 'error'; message: string };
 
 export interface ConversationPeer {
@@ -58,8 +68,11 @@ export interface ChatMessageDTO {
   conversationId: string;
   senderId: string;
   seq: number;
+  /** Empty string when the message was deleted — the row survives so `seq` ordering is preserved. */
   ciphertext: string;
   createdAt: number;
+  /** When the sender deleted it for everyone. */
+  deletedAt?: number;
 }
 
 /** A relayed MLS Welcome addressed to a recipient (CH-3). `welcome` is opaque base64 `mls_welcome`. */

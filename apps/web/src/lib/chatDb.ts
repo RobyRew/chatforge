@@ -95,6 +95,10 @@ export function getMessages(conversationId: string): Promise<StoredMessage[]> {
   );
 }
 
+/** Purge a locally-cached plaintext (a message deleted for everyone). */
+export const deleteMessage = (conversationId: string, seq: number): Promise<undefined> =>
+  tx('messages', 'readwrite', (s) => s.delete(`${conversationId}:${seq}`));
+
 // ── verifications (main thread): the safety number the user last confirmed, per conversation ──
 export const getVerification = (conversationId: string): Promise<StoredVerification | undefined> =>
   tx('verifications', 'readonly', (s) => s.get(conversationId) as IDBRequest<StoredVerification | undefined>);

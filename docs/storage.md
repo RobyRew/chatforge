@@ -115,7 +115,19 @@ sudo docker logs <api-container> 2>&1 | grep -i blob
 | Image shows "⚠ attachment is no longer available" | The blob was deleted, or the sender's quota cleanup removed it |
 | Everything 401s | A session problem, not storage — see [auth-logto.md](auth-logto.md) |
 
-### Known gap
+### Garbage collection
 
-Deleting a message does **not** yet delete its attachment; the blob lingers until the owner deletes it
-or hits their quota. Attachment garbage collection is on the roadmap in `agents.md`.
+The server cannot read a message, so it cannot work out which blob that message referenced. The link
+is therefore recorded explicitly: the send frame carries `blobIds`, and the server stores
+`blobs.message_seq`. That leaks nothing new — the server already stored those blobs — and without it
+"delete" would be a lie about the part that actually costs storage.
+
+| Path | When |
+|---|---|
+| Attachments of a deleted message | Immediately, when the message is deleted for everyone |
+| Abandoned uploads (never attached to a message) | Hourly sweeper, after a **6 hour** grace period |
+| A replaced avatar | Immediately, on profile save |
+
+Objects are deleted before their database rows: a failure the other way round would orphan bytes with
+nothing left pointing at them. Only the sender's **own, unattached, same-conversation** blobs can be
+linked, so a hostile client cannot attach — and later cause the deletion of — someone else's file.

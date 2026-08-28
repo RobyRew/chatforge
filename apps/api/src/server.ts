@@ -28,6 +28,8 @@ void bootstrap();
 // than accepting uploads we can't persist — everything else keeps working.
 if (env.s3.configured) {
   void import('./storage/blobStore').then(({ initBlobStore }) => initBlobStore(env.s3));
+  // Reclaim uploads that were never attached to a message (browser closed mid-send, etc.).
+  void import('./storage/blobGc').then(({ startBlobSweeper }) => startBlobSweeper());
 } else {
   // eslint-disable-next-line no-console
   console.warn('[blobs] S3_ACCESS_KEY/S3_SECRET_KEY not set — attachments and avatar uploads are disabled');

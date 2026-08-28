@@ -1,5 +1,5 @@
 import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
-import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import { getDb } from '../db';
 import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, user, userPresence } from '../db/schema';
 
@@ -32,6 +32,11 @@ export interface ChatRepo {
   listWelcomes(recipientId: string): Promise<WelcomeDTO[]>;
   /** Acknowledge (delete) a processed Welcome. */
   deleteWelcome(id: string, recipientId: string): Promise<void>;
+  /**
+   * Delete a message for everyone. Only the sender may; returns false otherwise (or if it's gone).
+   * Blanks the ciphertext but keeps the row — `seq` is the shared id replies/reactions point at.
+   */
+  deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean>;
 }
 
 export class DrizzleChatRepo implements ChatRepo {
@@ -139,6 +144,7 @@ export class DrizzleChatRepo implements ChatRepo {
         seq: r.seq,
         ciphertext: r.ciphertext,
         createdAt: r.createdAt.getTime(),
+        ...(r.deletedAt ? { deletedAt: r.deletedAt.getTime() } : {}),
       }));
   }
 
@@ -210,6 +216,22 @@ export class DrizzleChatRepo implements ChatRepo {
       welcome: r.welcome,
       createdAt: r.createdAt.getTime(),
     }));
+  }
+
+  async deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean> {
+    const updated = await this.db
+      .update(chatMessages)
+      .set({ ciphertext: '', deletedAt: new Date() })
+      .where(
+        and(
+          eq(chatMessages.conversationId, conversationId),
+          eq(chatMessages.seq, seq),
+          eq(chatMessages.senderId, requesterId), // sender-only, enforced in the WHERE
+          isNull(chatMessages.deletedAt),
+        ),
+      )
+      .returning({ seq: chatMessages.seq });
+    return updated.length > 0;
   }
 
   async deleteWelcome(id: string, recipientId: string): Promise<void> {

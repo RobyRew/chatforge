@@ -348,6 +348,41 @@ tests (token sealing round-trip/tamper/wrong-secret, state forgery + payload-swa
 rejection, routes 503/401 when unconfigured). **85 tests total**; typecheck + web build green.
 Migration `0010`. The live Spotify round trip needs real credentials and is untested here.
 
+## ADR-0026 — P5: message deletion + attachment GC; volumes in the backup set (2026-08-28) · Accepted
+**Context:** Two loose ends. Chat had no way to unsend a message, and P3's attachments had no
+lifecycle at all — a blob lived forever. Separately, moving MinIO to a named volume (ADR-0024
+amendment) had quietly taken it *out* of the Restic set.
+**Decision:**
+- **Deleting keeps the row, blanks the ciphertext.** `seq` is the shared id replies and reactions
+  reference; removing the row would leave dangling references and a hole in the ordering the client
+  walks. So `ciphertext=''` + `deletedAt`, and clients render a tombstone.
+- **Sender-only, enforced in the WHERE clause** (`deleteMessage(conversationId, seq, requesterId)`),
+  not by a read-then-check-then-write — there is no window between the check and the update.
+- **The server cannot discover which blob a message referenced** (it can't read the payload), so the
+  link is recorded explicitly: `blobIds` on the send frame → `blobs.messageSeq`. This leaks nothing
+  new (the server stored those blobs), and without it "delete" would be a lie about the part that
+  actually costs storage. `linkToMessage` only matches the sender's **own, unattached,
+  same-conversation** blobs, so naming someone else's id achieves nothing.
+- **Two reclaim paths:** attachments die with their message immediately; an hourly sweeper reclaims
+  uploads never attached to a message after a **6h grace period** (far longer than any legitimate
+  send), covering a browser closed mid-send. Objects are deleted before their rows — the reverse
+  would orphan bytes with nothing left pointing at them.
+- **Delete for everyone purges the local plaintext cache**, not just the view. MLS is forward-secret
+  and plaintext is cached per device, so skipping that would make "delete" merely "hide". A separate
+  **Remove for me** is local-only and honest about being so.
+- **Backups take volume NAME PATTERNS, not paths** (`backup_docker_volumes` in the infrastructure
+  repo). Dokploy's project prefix carries a hash that changes when an app is recreated, so a
+  hard-coded path would silently stop matching — the same reasoning as `container_pattern` for the
+  pg dumps. A pattern matching nothing warns loudly rather than failing the run: a temporarily
+  removed app shouldn't block the whole backup, but "this data is not backed up" must never be
+  silent. Backing up a live object store is safe in a way a hot PGDATA is not (objects are written
+  once, not mutated), which is why databases keep using logical dumps.
+**Status:** Accepted. Verified: 16 blob/GC API tests (incl. *an id belonging to someone else is
+ignored when linking*, sweeper spares recent and attached blobs, sender-only deletion, double-delete
+refused); **89 tests total**; typecheck + web build green. Migration `0011`. The backup change was
+applied with `--tags backup` and verified by a real run — the latest Restic snapshot now lists
+`/var/lib/docker/volumes/tools-chatforge-zmz4mf_chatforge-minio/_data`.
+
 ---
 
 # Conventions
@@ -401,4 +436,5 @@ against (2026-06-01):
   stubbed and 18 tests). Division of labour: **`agents.md` records *why* (append-only ADRs); `docs/`
   describes *what exists now* (edited in place).**
 - [x] **Rich-chat roadmap P4 — key verification, Spotify, settings hub (ADR-0025)** — **safety numbers**: `MlsProvider.groupMembers()` + `@chatforge/crypto/safety-number` (60 digits, iterated SHA-512), computed in the Web Worker, verified state stored per-device only (IndexedDB v3), with a header badge that turns amber when a verified key changes. **Spotify now-playing**: read-only scope, server-side OAuth with an HMAC-signed `state`, tokens sealed at rest (`user_integrations`, migration `0010`), a poller that only runs for users with a live WebSocket and never clobbers a manual status. **Settings hub**: registry-driven sections (Profile / Chat / Privacy / Vault / Integrations) mirroring the admin console, plus a Privacy card that states plainly what is and isn't encrypted. 85 tests green; docs in `docs/integrations.md`.
-- [ ] Roadmap next: attachment GC when a message is deleted, device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers. **Ops gap: the `chatforge-minio` volume is not in the Restic backup set** (named volumes live outside `/etc` and `/opt`) — attachments exist nowhere else.
+- [x] **P5 — message deletion, attachment GC, backup gap closed (ADR-0026)** — delete for everyone (sender-only, enforced in the WHERE clause) blanks the ciphertext but keeps the row so `seq` references stay valid; clients purge their local plaintext cache and render a tombstone, plus a local-only **Remove for me**. Attachments are linked to their message via `blobIds` on the send frame (the server can't read the payload, so it can't infer the link) and are reclaimed on delete, with an hourly sweeper for uploads abandoned >6h. Migration `0011`. **Restic now covers Docker named volumes** by name pattern (`backup_docker_volumes`), verified by a real backup run.
+- [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers, group chats (MLS `addMember` already exists; the UI is DM-only).
