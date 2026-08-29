@@ -5,27 +5,12 @@ import { requirePermission, type Vars } from '../middleware';
 /** REST surface for chat: create/list DMs + paginated history. Realtime is the WS gateway. */
 export const chatModule = new Hono<Vars>();
 
-async function userIdByEmail(email: string): Promise<string | undefined> {
-  const { getDb } = await import('../db');
-  const { user } = await import('../db/schema');
-  const { eq } = await import('drizzle-orm');
-  const rows = await getDb().select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
-  return rows[0]?.id;
-}
-
-async function userIdByUsername(username: string): Promise<string | undefined> {
-  const { getDb } = await import('../db');
-  const { user } = await import('../db/schema');
-  const { eq } = await import('drizzle-orm');
-  const rows = await getDb().select({ id: user.id }).from(user).where(eq(user.username, username)).limit(1);
-  return rows[0]?.id;
-}
-
 /** Resolve a peer by userId, email, or @username (in that order). */
 async function resolvePeerId(body: { userId?: string; email?: string; username?: string }): Promise<string | undefined> {
   if (body.userId) return body.userId;
-  if (body.email) return userIdByEmail(body.email.trim().toLowerCase());
-  if (body.username) return userIdByUsername(body.username.trim().toLowerCase().replace(/^@/, ''));
+  const repo = getChatRepo();
+  if (body.email) return repo.findUserIdByEmail(body.email.trim().toLowerCase());
+  if (body.username) return repo.findUserIdByUsername(body.username.trim().toLowerCase().replace(/^@/, ''));
   return undefined;
 }
 
@@ -38,6 +23,78 @@ chatModule.post('/conversations', requirePermission('chat:use'), async (c) => {
   const dm = await getChatRepo().createDm(me.id, peerId);
   return c.json({ conversationId: dm.id, created: dm.created });
 });
+
+// ── Groups (P6) ──────────────────────────────────────────────────────────────
+// Membership is server-authoritative (who may read what), but the *cryptographic* membership is
+// MLS's: adding someone means the client relays a Welcome to them and a commit to everyone else.
+// Both must happen — see docs/architecture.md.
+
+const MAX_GROUP_MEMBERS = 50;
+
+/** Create a group. The creator is its owner and the only one who may add or remove members. */
+chatModule.post('/groups', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  const body = (await c.req.json().catch(() => ({}))) as { title?: unknown; members?: unknown };
+  const title = typeof body.title === 'string' ? body.title.trim().slice(0, 80) : '';
+  if (!title) return c.json({ error: 'title required' }, 400);
+  if (!Array.isArray(body.members) || body.members.length === 0) return c.json({ error: 'at least one member required' }, 400);
+  if (body.members.length > MAX_GROUP_MEMBERS) return c.json({ error: `at most ${MAX_GROUP_MEMBERS} members` }, 400);
+
+  const ids: string[] = [];
+  for (const entry of body.members) {
+    if (typeof entry !== 'string' || !entry.trim()) return c.json({ error: 'invalid member handle' }, 400);
+    const id = await resolveHandle(entry);
+    if (!id) return c.json({ error: `no such user: ${entry}` }, 404);
+    if (id !== me.id && !ids.includes(id)) ids.push(id);
+  }
+  if (!ids.length) return c.json({ error: 'a group needs someone other than you' }, 400);
+
+  const { id } = await getChatRepo().createGroup(me.id, title, ids);
+  return c.json({ conversationId: id, memberIds: ids }, 201);
+});
+
+/** Add a member. Owner-only — enforced in the repo, not just here. */
+chatModule.post('/conversations/:id/members', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  const conversationId = c.req.param('id');
+  const body = (await c.req.json().catch(() => ({}))) as { handle?: unknown };
+  if (typeof body.handle !== 'string' || !body.handle.trim()) return c.json({ error: 'handle required' }, 400);
+  const userId = await resolveHandle(body.handle);
+  if (!userId) return c.json({ error: 'no such user' }, 404);
+  if (!(await getChatRepo().addGroupMember(conversationId, me.id, userId))) {
+    return c.json({ error: 'cannot add that member (not the group owner, or already a member)' }, 403);
+  }
+  await notifyConversationChanged(conversationId);
+  return c.json({ userId }, 201);
+});
+
+/** Remove a member (owner) or leave (yourself). The owner cannot leave their own group. */
+chatModule.delete('/conversations/:id/members/:userId', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  const conversationId = c.req.param('id');
+  const target = c.req.param('userId');
+  // Capture the roster *before* the removal so the leaver's own client is told too.
+  const before = await getChatRepo().memberIds(conversationId);
+  if (!(await getChatRepo().removeGroupMember(conversationId, me.id, target))) {
+    return c.json({ error: 'cannot remove that member' }, 403);
+  }
+  await notifyConversationChanged(conversationId, before);
+  return c.json({ ok: true });
+});
+
+/** Tell every (current or just-removed) member to refetch this conversation's metadata. */
+async function notifyConversationChanged(conversationId: string, extra: string[] = []): Promise<void> {
+  const { broadcastTo } = await import('../chat/broadcast');
+  const members = new Set([...(await getChatRepo().memberIds(conversationId)), ...extra]);
+  for (const m of members) broadcastTo(m, { t: 'conversation', conversationId });
+}
+
+/** Resolve `@username`, an email, or a raw user id to a user id. */
+async function resolveHandle(raw: string): Promise<string | undefined> {
+  const value = raw.trim().replace(/^@/, '').toLowerCase();
+  if (value.includes('@')) return resolvePeerId({ email: value });
+  return resolvePeerId({ username: value });
+}
 
 chatModule.get('/conversations', requirePermission('chat:use'), async (c) => {
   const me = c.get('user')!;

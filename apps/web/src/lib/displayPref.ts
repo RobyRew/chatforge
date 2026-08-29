@@ -19,3 +19,10 @@ export function peerLabel(peer: Pick<ConversationPeer, 'email' | 'name' | 'usern
   if (as === 'email') return peer.email;
   return peer.name || (peer.username ? `@${peer.username}` : peer.email);
 }
+
+/** Label a conversation: a group by its title, a DM by the peer's chosen label. */
+export function conversationLabel(c: { kind?: 'dm' | 'group'; title?: string | null; peers: Array<Pick<ConversationPeer, 'email' | 'name' | 'username'>> }, as?: DisplayAs): string {
+  if (c.kind === 'group') return c.title?.trim() || 'Untitled group';
+  const peer = c.peers[0];
+  return peer ? peerLabel(peer, as) : 'Unknown';
+}

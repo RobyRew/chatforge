@@ -106,6 +106,12 @@ export interface MlsProvider {
    * out-of-band is what detects a man-in-the-middle, because a substituted key changes it.
    */
   groupMembers(groupState: Uint8Array): Promise<MlsMember[]>;
+  /**
+   * Remove a member by leaf index. The returned commit **must** reach every remaining member: it
+   * rotates the group secrets, which is what actually stops the removed device from reading what
+   * comes next. Dropping them from the server's member list alone would not.
+   */
+  removeMember(groupState: Uint8Array, leafIndex: number): Promise<RemoveResult>;
 }
 
 /** One member of a group, as recorded in the ratchet tree's leaf node. */
@@ -114,6 +120,15 @@ export interface MlsMember {
   identity: Uint8Array;
   /** The Ed25519 public key MLS verifies this member's messages against. */
   signatureKey: Uint8Array;
+  /** Position in the ratchet tree — the handle a Remove proposal needs. */
+  leafIndex: number;
+}
+
+/** Result of removing a member: the new state plus the commit every remaining member must apply. */
+export interface RemoveResult {
+  groupState: Uint8Array;
+  /** Wire-encoded commit — relay to the group's remaining members. */
+  commit: Uint8Array;
 }
 
 // ── byte packing for the private KeyPackage (ts-mls has no wire encoder for it) ──
@@ -289,16 +304,26 @@ class TsMlsProvider implements MlsProvider {
     return { type: 'handshake', groupState: serializeState(result.newState) };
   }
 
+  async removeMember(groupState: Uint8Array, leafIndex: number): Promise<RemoveResult> {
+    const state = deserializeState(groupState);
+    const proposal: Proposal = { proposalType: 'remove', remove: { removed: leafIndex } };
+    const res = await createCommit({ state, cipherSuite: this.impl }, { extraProposals: [proposal], ratchetTreeExtension: true });
+    res.consumed.forEach(zeroOutUint8Array);
+    return { groupState: serializeState(res.newState), commit: encodeMlsMessage(res.commit) };
+  }
+
   groupMembers(groupState: Uint8Array): Promise<MlsMember[]> {
     const state = deserializeState(groupState);
     const members: MlsMember[] = [];
     // The ratchet tree interleaves parent and leaf nodes and contains blanks for removed members;
-    // only populated leaves are current members.
-    for (const node of state.ratchetTree) {
+    // only populated leaves are current members. Leaves sit at even array positions, so the leaf
+    // index — what a Remove proposal addresses — is half the array position.
+    for (let i = 0; i < state.ratchetTree.length; i += 2) {
+      const node = state.ratchetTree[i];
       if (!node || node.nodeType !== 'leaf') continue;
       const { credential, signaturePublicKey } = node.leaf;
       if (credential.credentialType !== 'basic') continue; // we only issue basic credentials
-      members.push({ identity: credential.identity, signatureKey: signaturePublicKey });
+      members.push({ identity: credential.identity, signatureKey: signaturePublicKey, leafIndex: i / 2 });
     }
     return Promise.resolve(members);
   }

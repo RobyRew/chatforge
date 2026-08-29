@@ -40,4 +40,9 @@ export const chatWorker = {
     call({ id: rid(), type: 'decrypt', conversationId, ciphertext }),
   safetyNumber: (conversationId: string, peerId: string): Promise<{ number: string | null }> =>
     call({ id: rid(), type: 'safetyNumber', conversationId, peerId }),
+  createGroup: (conversationId: string): Promise<unknown> => call({ id: rid(), type: 'createGroup', conversationId }),
+  addMember: (conversationId: string, peerKeyPackage: string): Promise<{ welcome: string; commit: string }> =>
+    call({ id: rid(), type: 'addMember', conversationId, peerKeyPackage }),
+  removeMember: (conversationId: string, peerId: string): Promise<{ commit: string | null }> =>
+    call({ id: rid(), type: 'removeMember', conversationId, peerId }),
 };

@@ -85,6 +85,30 @@ permission, because there is no mechanism that could implement one.
   builds the group, and relays a self-contained *Welcome*. If a peer has never opened Chat they have no
   KeyPackages published, and the UI says so explicitly rather than failing obscurely.
 
+## Groups
+
+A group has **two memberships, and both matter**:
+
+| | Decides | Lives in |
+|---|---|---|
+| Server roster (`chat_members`) | who messages are **delivered** to | Postgres |
+| MLS ratchet tree | who can **read** them | each member's device |
+
+Adding someone relays a **Welcome** to them and a **commit** to everyone already in the group.
+Removing someone sends a **Remove commit** that rotates the group secrets — that is what actually
+revokes access, so it goes out *before* the server roster changes. Updating only the roster would
+leave a removed member cryptographically able to read anything they could still get hold of.
+
+Commits are relayed as ordinary messages, so they land in the same monotonic `seq` stream as
+everything else: a client that processed message N has already applied every commit before it.
+
+**One owner.** The creator is the only member who may add or remove, and cannot leave (that would
+orphan a group nobody can manage). Anyone else may leave. This is enforced in the repository layer —
+the route cannot skip it.
+
+> A removed member keeps what they already received. That is forward secrecy behaving as designed:
+> MLS protects *future* messages after a re-key, not past ones already delivered.
+
 ## Verifying keys (safety numbers)
 
 A conversation is bootstrapped through KeyPackages the server relays, so a malicious server could
@@ -93,6 +117,8 @@ derived (iterated SHA-512, Signal-style) from both parties' real MLS signature k
 user ids. Compare it out-of-band and the channel is confirmed end-to-end.
 
 - Computed **inside the Web Worker** — signature keys never reach the main thread.
+- **Pairwise only.** Groups have no single counterpart to compare against, so the badge is hidden
+  there rather than implying a guarantee it doesn't make.
 - Verification is stored **only on that device**. A server-stored "verified" flag would be
   meaningless, since the server is exactly what the check is aimed at.
 - If a previously-verified number changes, the UI says so loudly rather than accepting it silently.

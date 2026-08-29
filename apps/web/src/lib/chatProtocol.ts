@@ -11,7 +11,10 @@ export type ChatWorkerRequest =
   | { id: string; type: 'hasGroup'; conversationId: string }
   | { id: string; type: 'encrypt'; conversationId: string; payload: string }
   | { id: string; type: 'decrypt'; conversationId: string; ciphertext: string }
-  | { id: string; type: 'safetyNumber'; conversationId: string; peerId: string };
+  | { id: string; type: 'safetyNumber'; conversationId: string; peerId: string }
+  | { id: string; type: 'createGroup'; conversationId: string }
+  | { id: string; type: 'addMember'; conversationId: string; peerKeyPackage: string }
+  | { id: string; type: 'removeMember'; conversationId: string; peerId: string };
 
 // The worker treats the payload as an opaque string; the structured `ChatPayload` (replies,
 // reactions, attachments) is built/parsed on the main thread (see lib/chatPayload.ts).

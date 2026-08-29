@@ -1,9 +1,10 @@
 import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+import { stores } from '../stores';
 import type { ChatRepo } from './repo';
 
 /** In-memory ChatRepo for tests/dev — lets the WS transport run in-process without Postgres. */
 export class MemoryChatRepo implements ChatRepo {
-  private convs = new Map<string, { id: string; members: string[] }>();
+  private convs = new Map<string, { id: string; members: string[]; kind: 'dm' | 'group'; title?: string; createdBy?: string }>();
   private lastRead = new Map<string, number>(); // `${conv}:${user}` -> seq
   private msgs = new Map<string, ChatMessageDTO[]>(); // conv -> messages
   private seq = new Map<string, number>(); // conv -> last seq
@@ -25,7 +26,7 @@ export class MemoryChatRepo implements ChatRepo {
     // UUIDs, not `conv_N` — Postgres ids are uuids and routes validate that shape, so the double
     // has to be faithful or it hides real 400s.
     const id = crypto.randomUUID();
-    this.convs.set(id, { id, members: [a, b] });
+    this.convs.set(id, { id, members: [a, b], kind: 'dm' });
     this.lastRead.set(this.key(id, a), 0);
     this.lastRead.set(this.key(id, b), 0);
     this.msgs.set(id, []);
@@ -41,6 +42,9 @@ export class MemoryChatRepo implements ChatRepo {
           id: conv.id,
           peers: conv.members.filter((m) => m !== userId).map((id) => ({ id, email: id })),
           lastReadSeq: this.lastRead.get(this.key(conv.id, userId)) ?? 0,
+          kind: conv.kind,
+          title: conv.title ?? null,
+          createdBy: conv.createdBy ?? null,
         });
       }
     }
@@ -61,6 +65,18 @@ export class MemoryChatRepo implements ChatRepo {
 
   async isMember(conversationId: string, userId: string): Promise<boolean> {
     return this.convs.get(conversationId)?.members.includes(userId) ?? false;
+  }
+
+  // Resolves against the same in-memory user directory the dev bearer fallback uses, so the double
+  // behaves like the real directory instead of quietly failing every handle lookup.
+  async findUserIdByEmail(email: string): Promise<string | undefined> {
+    for (const u of stores.users.values()) if (u.email === email) return u.id;
+    return undefined;
+  }
+
+  async findUserIdByUsername(username: string): Promise<string | undefined> {
+    for (const u of stores.users.values()) if (u.email.split('@')[0] === username) return u.id;
+    return undefined;
   }
 
   async appendMessage(conversationId: string, senderId: string, ciphertext: string): Promise<ChatMessageDTO> {
@@ -119,6 +135,40 @@ export class MemoryChatRepo implements ChatRepo {
 
   async deleteWelcome(id: string, recipientId: string): Promise<void> {
     this.welcomes = this.welcomes.filter((w) => !(w.id === id && w.recipientId === recipientId));
+  }
+
+  async createGroup(creator: string, title: string, memberIds: string[]): Promise<{ id: string }> {
+    const id = crypto.randomUUID();
+    const members = [...new Set([creator, ...memberIds])];
+    this.convs.set(id, { id, members, kind: 'group', title, createdBy: creator });
+    for (const m of members) this.lastRead.set(this.key(id, m), 0);
+    this.msgs.set(id, []);
+    this.seq.set(id, 0);
+    return { id };
+  }
+
+  private isGroupOwner(conversationId: string, actorId: string): boolean {
+    const c = this.convs.get(conversationId);
+    return c?.kind === 'group' && c.createdBy === actorId;
+  }
+
+  async addGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean> {
+    if (!this.isGroupOwner(conversationId, actorId)) return false;
+    const c = this.convs.get(conversationId)!;
+    if (c.members.includes(userId)) return false;
+    c.members.push(userId);
+    this.lastRead.set(this.key(conversationId, userId), 0);
+    return true;
+  }
+
+  async removeGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean> {
+    const owner = this.isGroupOwner(conversationId, actorId);
+    if (actorId !== userId && !owner) return false;
+    if (actorId === userId && owner) return false; // the owner leaving would orphan the group
+    const c = this.convs.get(conversationId);
+    if (!c || !c.members.includes(userId)) return false;
+    c.members = c.members.filter((m) => m !== userId);
+    return true;
   }
 
   async deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean> {

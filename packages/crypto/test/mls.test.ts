@@ -71,3 +71,72 @@ describe('MLS provider (ts-mls, 1:1 DM)', () => {
     await expect(mls.decrypt(bobState, out.ciphertext)).rejects.toThrow();
   });
 });
+
+describe('groups (P6): add + remove with real commits', () => {
+  const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
+  const decode = (u: Uint8Array): string => new TextDecoder().decode(u);
+
+  it('adds a third member: the commit advances the existing members, the Welcome onboards the new one', async () => {
+    const mls = await createMlsProvider();
+    const a = await mls.generateKeyPackage(utf8('alice'));
+    const b = await mls.generateKeyPackage(utf8('bob'));
+    const c = await mls.generateKeyPackage(utf8('carol'));
+
+    // alice + bob
+    const dm = await mls.startDm(utf8('group-1'), a, b.publicPackage);
+    let aState = dm.groupState;
+    let bState = await mls.joinGroup(dm.welcome, b);
+
+    // alice adds carol
+    const add = await mls.addMember(aState, c.publicPackage);
+    aState = add.groupState;
+    const cState = await mls.joinGroup(add.welcome, c);
+
+    // bob MUST process the commit or he falls a whole epoch behind
+    const applied = await mls.decrypt(bState, add.commit);
+    expect(applied.type).toBe('handshake');
+    bState = applied.groupState;
+
+    expect((await mls.groupMembers(aState)).map((m) => decode(m.identity)).sort()).toEqual(['alice', 'bob', 'carol']);
+
+    // all three now share one epoch: alice speaks, bob and carol both read it
+    const sent = await mls.encrypt(aState, utf8('hello group'));
+    const atBob = await mls.decrypt(bState, sent.ciphertext);
+    const atCarol = await mls.decrypt(cState, sent.ciphertext);
+    expect(atBob.type).toBe('application');
+    expect(atCarol.type).toBe('application');
+    if (atBob.type === 'application') expect(decode(atBob.plaintext)).toBe('hello group');
+    if (atCarol.type === 'application') expect(decode(atCarol.plaintext)).toBe('hello group');
+  });
+
+  it('removes a member so they can no longer read what follows', async () => {
+    const mls = await createMlsProvider();
+    const a = await mls.generateKeyPackage(utf8('alice'));
+    const b = await mls.generateKeyPackage(utf8('bob'));
+    const c = await mls.generateKeyPackage(utf8('carol'));
+
+    const dm = await mls.startDm(utf8('group-2'), a, b.publicPackage);
+    let aState = dm.groupState;
+    let bState = await mls.joinGroup(dm.welcome, b);
+    const add = await mls.addMember(aState, c.publicPackage);
+    aState = add.groupState;
+    const cState = await mls.joinGroup(add.welcome, c);
+    bState = (await mls.decrypt(bState, add.commit)).groupState;
+
+    // alice removes carol
+    const carol = (await mls.groupMembers(aState)).find((m) => decode(m.identity) === 'carol');
+    expect(carol).toBeDefined();
+    const removed = await mls.removeMember(aState, carol!.leafIndex);
+    aState = removed.groupState;
+    bState = (await mls.decrypt(bState, removed.commit)).groupState;
+
+    expect((await mls.groupMembers(aState)).map((m) => decode(m.identity)).sort()).toEqual(['alice', 'bob']);
+
+    // the secrets rotated: bob still reads alice, carol cannot
+    const after = await mls.encrypt(aState, utf8('after removal'));
+    const atBob = await mls.decrypt(bState, after.ciphertext);
+    expect(atBob.type).toBe('application');
+    if (atBob.type === 'application') expect(decode(atBob.plaintext)).toBe('after removal');
+    await expect(mls.decrypt(cState, after.ciphertext)).rejects.toThrow();
+  });
+});

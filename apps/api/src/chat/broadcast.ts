@@ -17,6 +17,19 @@ export function broadcastToPeers(userId: string, frame: ServerFrame): void {
   current?.(userId, frame);
 }
 
+/** Send a frame to one specific user's connections (not their peers). */
+type DirectSender = (userId: string, frame: ServerFrame) => void;
+
+let direct: DirectSender | null = null;
+
+export function setDirectSender(d: DirectSender | null): void {
+  direct = d;
+}
+
+export function broadcastTo(userId: string, frame: ServerFrame): void {
+  direct?.(userId, frame);
+}
+
 /**
  * Seam for "who currently has a live connection". Used by the Spotify poller so it only polls for
  * people actually using the app — on a small VPS, polling every account forever is wasted work.

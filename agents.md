@@ -383,6 +383,37 @@ refused); **89 tests total**; typecheck + web build green. Migration `0011`. The
 applied with `--tags backup` and verified by a real run — the latest Restic snapshot now lists
 `/var/lib/docker/volumes/tools-chatforge-zmz4mf_chatforge-minio/_data`.
 
+## ADR-0027 — P6: group chats over MLS (2026-08-28) · Accepted
+**Context:** Chat was DM-only. MLS is a *group* protocol — `addMember` already existed from CH-3 —
+so the gap was orchestration and authorization, not cryptography.
+**Decision:**
+- **Two memberships, and both must be maintained.** The server's `chat_members` decides who messages
+  are *delivered* to; MLS's ratchet tree decides who can *read* them. Adding someone means relaying a
+  **Welcome** to them and a **commit** to everyone already in the group; removing means a **Remove
+  commit** that rotates the group secrets. Dropping a server row alone would leave a removed member
+  cryptographically able to read anything they could still obtain — so removal sends the commit
+  **first**, then updates the roster.
+- **Commits ride the ordinary message stream.** They are relayed through `send` like any ciphertext,
+  so they land in the same monotonic `seq` order. A client that processed message N has, by
+  construction, already applied every commit before it — no separate ordering channel to get wrong.
+  `decrypt()` already returned `handshake` for non-application messages, so receivers needed no change.
+- **One owner, deliberately.** The creator is the only member who may add or remove, and **cannot
+  leave** (that would orphan a group nobody can manage). Anyone else may leave. Enforced in the repo,
+  not the route — `addGroupMember`/`removeGroupMember` take the actor and decide, so there is no path
+  that skips the check. A DM is not a group: `addGroupMember` refuses it outright.
+- **Safety numbers stay pairwise and are hidden for groups.** A group has no single "other person" to
+  compare against; showing a number there would imply a guarantee it doesn't make.
+- **Directory lookup moved behind `ChatRepo`** (`findUserIdByEmail`/`findUserIdByUsername`). It was
+  reaching into Drizzle directly, which meant every route that resolves a handle needed a live
+  database and so was untestable — the group routes made that gap load-bearing.
+**Consequences:** a removed member keeps what they already received. That is forward secrecy working
+as designed, not a leak, and the UI says so rather than implying otherwise.
+**Status:** Accepted. Verified: 2 crypto tests over a real 3-member group (*the commit advances
+existing members and all three then share an epoch*; *a removed member can no longer decrypt what
+follows*) + 10 API tests (owner-only add/remove, leave, owner-cannot-leave, non-owner 403 over HTTP,
+delivery stops after removal, a DM is not a group). **101 tests total**; typecheck + web build green.
+Migration `0012`.
+
 ---
 
 # Conventions
@@ -437,4 +468,5 @@ against (2026-06-01):
   describes *what exists now* (edited in place).**
 - [x] **Rich-chat roadmap P4 — key verification, Spotify, settings hub (ADR-0025)** — **safety numbers**: `MlsProvider.groupMembers()` + `@chatforge/crypto/safety-number` (60 digits, iterated SHA-512), computed in the Web Worker, verified state stored per-device only (IndexedDB v3), with a header badge that turns amber when a verified key changes. **Spotify now-playing**: read-only scope, server-side OAuth with an HMAC-signed `state`, tokens sealed at rest (`user_integrations`, migration `0010`), a poller that only runs for users with a live WebSocket and never clobbers a manual status. **Settings hub**: registry-driven sections (Profile / Chat / Privacy / Vault / Integrations) mirroring the admin console, plus a Privacy card that states plainly what is and isn't encrypted. 85 tests green; docs in `docs/integrations.md`.
 - [x] **P5 — message deletion, attachment GC, backup gap closed (ADR-0026)** — delete for everyone (sender-only, enforced in the WHERE clause) blanks the ciphertext but keeps the row so `seq` references stay valid; clients purge their local plaintext cache and render a tombstone, plus a local-only **Remove for me**. Attachments are linked to their message via `blobIds` on the send frame (the server can't read the payload, so it can't infer the link) and are reclaimed on delete, with an hourly sweeper for uploads abandoned >6h. Migration `0011`. **Restic now covers Docker named volumes** by name pattern (`backup_docker_volumes`), verified by a real backup run.
-- [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, api-client codegen, Meta/Discord importers, group chats (MLS `addMember` already exists; the UI is DM-only).
+- [x] **P6 — group chats over MLS (ADR-0027)** — create a group, add/remove members, leave. Each add relays a **Welcome** to the newcomer and a **commit** to everyone already in; each remove sends a **Remove commit** that rotates the group secrets *before* the roster changes, so access is revoked cryptographically and not just at the transport. Commits ride the ordinary message stream, so they arrive in `seq` order. One owner (creator) may add/remove and cannot leave; enforced in the repo, not the route. `ConversationSummary` gains `kind`/`title`/`createdBy`; new `conversation` frame tells members to refetch. Web: group tab in New chat, group header + roster panel, group rows in the list. Directory lookup moved behind `ChatRepo` so handle-resolving routes are testable. Migration `0012`.
+- [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Meta/Discord importers.

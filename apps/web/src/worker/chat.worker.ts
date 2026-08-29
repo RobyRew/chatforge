@@ -78,6 +78,32 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
       await putGroup(req.conversationId, out.groupState);
       return { ciphertext: toB64(out.ciphertext) };
     }
+    case 'createGroup': {
+      // A group starts as a one-member MLS group; members are added one at a time below.
+      const self = await m.generateKeyPackage(enc.encode(userId));
+      const state = await m.createGroup(enc.encode(req.conversationId), self);
+      await putGroup(req.conversationId, state);
+      return {};
+    }
+    case 'addMember': {
+      const state = await getGroup(req.conversationId);
+      if (!state) throw new Error('no group state for conversation');
+      const res = await m.addMember(state, fromB64(req.peerKeyPackage));
+      await putGroup(req.conversationId, res.groupState);
+      // The Welcome onboards the new member; the commit MUST reach everyone already in the group,
+      // or they stay an epoch behind and can no longer read anything that follows.
+      return { welcome: toB64(res.welcome), commit: toB64(res.commit) };
+    }
+    case 'removeMember': {
+      const state = await getGroup(req.conversationId);
+      if (!state) throw new Error('no group state for conversation');
+      const target = (await m.groupMembers(state)).find((x) => dec.decode(x.identity) === req.peerId);
+      if (!target) return { commit: null };
+      const res = await m.removeMember(state, target.leafIndex);
+      await putGroup(req.conversationId, res.groupState);
+      // Rotating the secrets is what actually revokes their access; relay this to everyone left.
+      return { commit: toB64(res.commit) };
+    }
     case 'safetyNumber': {
       // Computed here, in the worker, so signature keys never reach the main thread. The number
       // depends only on the two members' MLS identity keys — the same values MLS itself verifies

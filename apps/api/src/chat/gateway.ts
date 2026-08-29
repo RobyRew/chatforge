@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { ClientFrameSchema, type ServerFrame } from '@chatforge/types';
 import { WebSocket, WebSocketServer } from 'ws';
-import { setBroadcaster, setOnlineLister } from './broadcast';
+import { setBroadcaster, setDirectSender, setOnlineLister } from './broadcast';
 import type { ChatRepo } from './repo';
 
 /** Resolve a WS upgrade request to a user id (or null to reject). */
@@ -88,6 +88,9 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
       }
     })();
   });
+
+  // Deliver a frame to one specific user (group membership changes, not peer fan-out).
+  setDirectSender((userId, frame) => sendTo(userId, frame));
 
   // Who is connected right now — the Spotify poller only works for these users.
   setOnlineLister(() => [...registry.entries()].filter(([, set]) => set.size > 0).map(([userId]) => userId));

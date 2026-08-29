@@ -222,6 +222,69 @@ class ChatClient {
     return conversationId;
   }
 
+  /**
+   * Create a group and bring every member into the MLS group.
+   *
+   * Order matters: each add produces a Welcome for the new member **and** a commit that everyone
+   * already in the group must apply. The commit is relayed as a normal message so it lands in the
+   * same ordered `seq` stream as everything else — a member who processed message N has, by
+   * construction, already processed every commit before it.
+   */
+  async newGroup(title: string, handles: string[]): Promise<string | null> {
+    const cleaned = handles.map((h) => h.trim().replace(/^@/, '').toLowerCase()).filter(Boolean);
+    if (!title.trim() || !cleaned.length) return null;
+    const { conversationId, memberIds } = await api.chat.createGroup(title.trim(), cleaned);
+    await chatWorker.createGroup(conversationId);
+    for (const userId of memberIds) {
+      await this.mlsAddMember(conversationId, userId);
+    }
+    await this.refreshConversations();
+    return conversationId;
+  }
+
+  /** Claim the peer's KeyPackage, add them to the MLS group, relay the Welcome + commit. */
+  private async mlsAddMember(conversationId: string, userId: string): Promise<void> {
+    let claim: { userId: string; keyPackage: string };
+    try {
+      claim = await api.chat.claimKeyPackage({ userId });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        throw new Error(`That person hasn't opened Chat yet (no encryption keys published). Ask them to open the Chat page once, then try again.`);
+      }
+      throw e;
+    }
+    const { welcome, commit } = await chatWorker.addMember(conversationId, claim.keyPackage);
+    await api.chat.relayWelcome(conversationId, claim.userId, welcome);
+    // Existing members need the commit; the new member gets the state from the Welcome instead.
+    this.wsSend({ t: 'send', conversationId, ciphertext: commit, clientId: crypto.randomUUID() });
+  }
+
+  /** Add someone to an existing group (owner only — the server enforces it). */
+  async addGroupMember(conversationId: string, handle: string): Promise<void> {
+    const { userId } = await api.chat.addMember(conversationId, handle);
+    await this.mlsAddMember(conversationId, userId);
+    await this.refreshConversations();
+  }
+
+  /**
+   * Remove someone from a group. The MLS commit goes first: it rotates the group secrets, which is
+   * what actually revokes their access. Dropping them from the server roster alone would only stop
+   * new messages being *delivered* to them.
+   */
+  async removeGroupMember(conversationId: string, userId: string): Promise<void> {
+    const { commit } = await chatWorker.removeMember(conversationId, userId).catch(() => ({ commit: null }));
+    if (commit) this.wsSend({ t: 'send', conversationId, ciphertext: commit, clientId: crypto.randomUUID() });
+    await api.chat.removeMember(conversationId, userId);
+    await this.refreshConversations();
+  }
+
+  /** Leave a group (anyone but the owner). */
+  async leaveGroup(conversationId: string): Promise<void> {
+    if (!this.me) return;
+    await api.chat.removeMember(conversationId, this.me.id);
+    await this.refreshConversations();
+  }
+
   /** Ensure we hold MLS group state: join a pending Welcome if there is one, otherwise initiate. */
   private async ensureGroup(conversationId: string, target: { email?: string; username?: string }, label: string): Promise<void> {
     if ((await chatWorker.hasGroup(conversationId)).has) return;
@@ -419,6 +482,10 @@ class ChatClient {
         this.emit({ profiles: { ...this.state.profiles, [f.userId]: next } });
         break;
       }
+      case 'conversation':
+        // Membership or title changed — refetch rather than trying to patch state from the wire.
+        void this.refreshConversations();
+        break;
       case 'deleted':
         // Drop the cached plaintext too — otherwise "delete for everyone" would only hide it.
         void dbDeleteMessage(f.conversationId, f.seq);

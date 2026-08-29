@@ -45,6 +45,9 @@ export type ServerFrame =
   | { t: 'profile'; userId: string; name?: string | null; username?: string | null; email?: string; image?: string | null; statusEmoji?: string | null; statusText?: string | null }
   // A message was deleted for everyone. Clients drop their local plaintext cache for that `seq`.
   | { t: 'deleted'; conversationId: string; seq: number; by: string }
+  // Membership or title changed — the client refetches this conversation's metadata. Deliberately
+  // carries no detail: the roster is server-known, but there is no reason to duplicate it on the wire.
+  | { t: 'conversation'; conversationId: string }
   | { t: 'error'; message: string };
 
 export interface ConversationPeer {
@@ -59,8 +62,14 @@ export interface ConversationPeer {
 
 export interface ConversationSummary {
   id: string;
+  /** Everyone except me. For a DM that's one person; for a group it's the rest of the members. */
   peers: ConversationPeer[];
   lastReadSeq: number;
+  kind: 'dm' | 'group';
+  /** Groups only; DMs are labelled from the peer's profile. */
+  title?: string | null;
+  /** Groups only: the member allowed to add/remove others. */
+  createdBy?: string | null;
 }
 
 export interface ChatMessageDTO {

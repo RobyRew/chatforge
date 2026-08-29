@@ -10,10 +10,19 @@ import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes,
  */
 export interface ChatRepo {
   createDm(a: string, b: string): Promise<{ id: string; created: boolean }>;
+  /** Create a group conversation. `creator` becomes its owner — the only one who may add/remove. */
+  createGroup(creator: string, title: string, memberIds: string[]): Promise<{ id: string }>;
+  /** Add a member. Owner-only; returns false if the caller isn't the owner or they're already in. */
+  addGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean>;
+  /** Remove a member — the owner removing someone, or anyone removing themselves (leaving). */
+  removeGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean>;
   listConversations(userId: string): Promise<ConversationSummary[]>;
   memberIds(conversationId: string): Promise<string[]>;
   conversationPeers(userId: string): Promise<string[]>;
   isMember(conversationId: string, userId: string): Promise<boolean>;
+  /** Directory lookup — resolving a handle to a user id. Behind the seam so routes stay testable. */
+  findUserIdByEmail(email: string): Promise<string | undefined>;
+  findUserIdByUsername(username: string): Promise<string | undefined>;
   appendMessage(conversationId: string, senderId: string, ciphertext: string): Promise<ChatMessageDTO>;
   listMessages(conversationId: string, opts?: { beforeSeq?: number; limit?: number }): Promise<ChatMessageDTO[]>;
   setLastRead(conversationId: string, userId: string, seq: number): Promise<void>;
@@ -69,8 +78,9 @@ export class DrizzleChatRepo implements ChatRepo {
 
   async listConversations(userId: string): Promise<ConversationSummary[]> {
     const mine = await this.db
-      .select({ c: chatMembers.conversationId, last: chatMembers.lastReadSeq })
+      .select({ c: chatMembers.conversationId, last: chatMembers.lastReadSeq, kind: chatConversations.kind, title: chatConversations.title, createdBy: chatConversations.createdBy })
       .from(chatMembers)
+      .innerJoin(chatConversations, eq(chatMembers.conversationId, chatConversations.id))
       .where(eq(chatMembers.userId, userId));
     const out: ConversationSummary[] = [];
     for (const row of mine) {
@@ -79,9 +89,60 @@ export class DrizzleChatRepo implements ChatRepo {
         .from(chatMembers)
         .innerJoin(user, eq(chatMembers.userId, user.id))
         .where(and(eq(chatMembers.conversationId, row.c), ne(chatMembers.userId, userId)));
-      out.push({ id: row.c, peers, lastReadSeq: row.last });
+      out.push({
+        id: row.c,
+        peers,
+        lastReadSeq: row.last,
+        kind: row.kind === 'group' ? 'group' : 'dm',
+        title: row.title,
+        createdBy: row.createdBy,
+      });
     }
     return out;
+  }
+
+  async createGroup(creator: string, title: string, memberIds: string[]): Promise<{ id: string }> {
+    const inserted = await this.db
+      .insert(chatConversations)
+      .values({ kind: 'group', title, createdBy: creator })
+      .returning({ id: chatConversations.id });
+    const id = inserted[0]!.id;
+    const unique = [...new Set([creator, ...memberIds])];
+    await this.db.insert(chatMembers).values(unique.map((userId) => ({ conversationId: id, userId })));
+    return { id };
+  }
+
+  /** True only if `actorId` created this conversation and it is a group. */
+  private async isGroupOwner(conversationId: string, actorId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ kind: chatConversations.kind, createdBy: chatConversations.createdBy })
+      .from(chatConversations)
+      .where(eq(chatConversations.id, conversationId))
+      .limit(1);
+    return rows[0]?.kind === 'group' && rows[0]?.createdBy === actorId;
+  }
+
+  async addGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean> {
+    if (!(await this.isGroupOwner(conversationId, actorId))) return false;
+    const added = await this.db
+      .insert(chatMembers)
+      .values({ conversationId, userId })
+      .onConflictDoNothing()
+      .returning({ userId: chatMembers.userId });
+    return added.length > 0;
+  }
+
+  async removeGroupMember(conversationId: string, actorId: string, userId: string): Promise<boolean> {
+    // Either the owner removing someone, or anyone removing themselves (leaving).
+    const allowed = actorId === userId || (await this.isGroupOwner(conversationId, actorId));
+    if (!allowed) return false;
+    // The owner leaving would orphan the group with nobody able to manage it.
+    if (actorId === userId && (await this.isGroupOwner(conversationId, actorId))) return false;
+    const removed = await this.db
+      .delete(chatMembers)
+      .where(and(eq(chatMembers.conversationId, conversationId), eq(chatMembers.userId, userId)))
+      .returning({ userId: chatMembers.userId });
+    return removed.length > 0;
   }
 
   async memberIds(conversationId: string): Promise<string[]> {
@@ -113,6 +174,16 @@ export class DrizzleChatRepo implements ChatRepo {
       .where(and(eq(chatMembers.conversationId, conversationId), eq(chatMembers.userId, userId)))
       .limit(1);
     return rows.length > 0;
+  }
+
+  async findUserIdByEmail(email: string): Promise<string | undefined> {
+    const rows = await this.db.select({ id: user.id }).from(user).where(eq(user.email, email)).limit(1);
+    return rows[0]?.id;
+  }
+
+  async findUserIdByUsername(username: string): Promise<string | undefined> {
+    const rows = await this.db.select({ id: user.id }).from(user).where(eq(user.username, username)).limit(1);
+    return rows[0]?.id;
   }
 
   async appendMessage(conversationId: string, senderId: string, ciphertext: string): Promise<ChatMessageDTO> {

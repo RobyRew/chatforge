@@ -167,6 +167,13 @@ export const api = {
     claimKeyPackage: (target: { userId?: string; email?: string; username?: string }): Promise<{ userId: string; keyPackage: string }> =>
       post('/api/chat/keypackages/claim', target),
 
+    createGroup: (title: string, members: string[]): Promise<{ conversationId: string; memberIds: string[] }> =>
+      post('/api/chat/groups', { title, members }),
+    addMember: (conversationId: string, handle: string): Promise<{ userId: string }> =>
+      post(`/api/chat/conversations/${conversationId}/members`, { handle }),
+    removeMember: (conversationId: string, userId: string): Promise<{ ok: boolean }> =>
+      del(`/api/chat/conversations/${conversationId}/members/${userId}`),
+
     listWelcomes: (): Promise<WelcomeDTO[]> => get<{ welcomes: WelcomeDTO[] }>('/api/chat/welcomes').then((r) => r.welcomes),
     relayWelcome: (conversationId: string, recipientId: string, welcome: string): Promise<{ id: string }> =>
       post('/api/chat/welcomes', { conversationId, recipientId, welcome }),

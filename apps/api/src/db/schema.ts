@@ -43,7 +43,11 @@ export const conversions = pgTable('conversions', {
 
 export const chatConversations = pgTable('chat_conversations', {
   id: uuid('id').defaultRandom().primaryKey(),
-  kind: text('kind').notNull().default('dm'),
+  kind: text('kind').notNull().default('dm'), // 'dm' | 'group'
+  /** Groups only — DMs are labelled from the peer's profile. */
+  title: text('title'),
+  /** Groups only: the one member allowed to add or remove others. */
+  createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
