@@ -34,7 +34,9 @@ services:
     # Object storage for chat attachments + avatars (P3). Reached only over the compose network —
     # the published ports are localhost-only and Traefik has no route to it.
     # Measures ~70 MB RSS on the VPS. Swap is provisioned by the Ansible `common` role.
-    image: minio/minio:latest
+    # The Docker Hub repository is no longer the maintained distribution path. Pin the
+    # amd64 manifest digest so a redeploy cannot silently change the object-store image.
+    image: quay.io/minio/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
