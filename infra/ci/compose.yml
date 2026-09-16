@@ -1,0 +1,20 @@
+# Disposable CI-only overrides; never use with a production project or volume.
+services:
+  garage:
+    ports: ['127.0.0.1:13900:3900']
+    healthcheck:
+      interval: 5s
+      start_period: 5s
+  postgres:
+    healthcheck:
+      interval: 5s
+      start_period: 5s
+  api:
+    healthcheck:
+      interval: 5s
+      start_period: 5s
+  web:
+    ports: ['127.0.0.1:18980:8080']
+    healthcheck:
+      interval: 5s
+      start_period: 5s

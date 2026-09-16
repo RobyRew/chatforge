@@ -28,7 +28,7 @@ let port: number;
 beforeAll(async () => {
   const app = createApp();
   const started = await new Promise<{ s: ReturnType<typeof serve>; port: number }>((resolve) => {
-    const s = serve({ fetch: app.fetch, port: 0 }, (info) => resolve({ s, port: info.port }));
+    const s = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }, (info) => resolve({ s, port: info.port }));
   });
   server = started.s;
   port = started.port;

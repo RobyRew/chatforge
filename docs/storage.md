@@ -1,4 +1,8 @@
-# Storage — attachments, avatars, MinIO
+# Storage — attachments, avatars, Garage
+
+The Garage replacement and production cutover are governed by
+[production-recovery.md](production-recovery.md). Original MinIO data is retained, not mounted
+as Garage data; the two on-disk formats are not interchangeable.
 
 ## The design in one paragraph
 
@@ -59,11 +63,11 @@ from the app's own origin.
 
 ### Where the bytes live
 
-**MinIO uses a named Docker volume, `chatforge-minio`** (`/var/lib/docker/volumes/...`).
+**Garage uses named volumes `chatforge-garage-data` and `chatforge-garage-metadata`.** Both are
+required for recovery. The original `chatforge-minio` volume stays untouched for rollback/forensics.
 
 ```bash
-sudo docker volume inspect chatforge-minio
-sudo du -sh /var/lib/docker/volumes/tools-chatforge-*_chatforge-minio/_data
+sudo docker volume ls --filter name=chatforge
 ```
 
 It did not start that way, and the reason it changed is worth knowing.
@@ -87,7 +91,9 @@ It did not start that way, and the reason it changed is worth knowing.
 > deploy tool manages.** And note how quiet both failures were — a green healthcheck and a successful
 > `HeadBucket` while the underlying storage no longer existed.
 
-Restic must cover the database **and** the MinIO volume — attachments exist nowhere else.
+Restic must cover the logical database dump, both Garage volumes, and the preserved MinIO volume.
+Create a consistent Garage metadata snapshot before backup; see the recovery runbook for the
+restore procedure and single-host durability limits. A copy of live SQLite/WAL files is insufficient.
 
 ### Checking it's healthy
 
@@ -99,8 +105,8 @@ sudo docker logs <api-container> 2>&1 | grep -i blob
 - `S3_ACCESS_KEY/S3_SECRET_KEY not set — attachments and avatar uploads are disabled` — running
   without storage on purpose; uploads return 503.
 - `bucket check failed: The request signature we calculated does not match` — **credential
-  mismatch.** `S3_SECRET_KEY` disagrees with `MINIO_ROOT_PASSWORD`. Clear `S3_ACCESS_KEY`/
-  `S3_SECRET_KEY` and let the API fall back to the MinIO credentials. See
+  mismatch.** Check that the API's dedicated S3 pair matches the key provisioned in Garage.
+  Do not substitute administrator credentials or disable authentication. See
   [configuration.md](configuration.md#object-storage-attachments--avatars).
 
 ### Symptoms → cause

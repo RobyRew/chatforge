@@ -1,0 +1,97 @@
+name: Build and test production images
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatforge-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm audit --audit-level=moderate
+      - run: npm run typecheck -- --force && npm run lint -- --force && npm test -- --force && npm run build -- --force
+
+  images:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build four images without production credentials
+        run: |
+          set -euo pipefail
+          for component in postgres garage api web; do
+            docker build --pull --label org.opencontainers.image.source=https://github.com/RobyRew/chatforge \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              -f "infra/$component.Dockerfile" -t "chatforge-$component:ci" .
+          done
+      - name: Scan the API runtime and embedded dependencies
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          image-ref: chatforge-api:ci
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+          hide-progress: true
+      - name: Scan the other runtime images
+        run: |
+          set -euo pipefail
+          for component in postgres garage web; do
+            trivy image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
+              --no-progress "chatforge-$component:ci"
+          done
+      - name: Check hardened runtime, migrations, S3 permissions, and restart persistence
+        run: bash infra/ci/smoke-images.sh
+      - name: Publish tested images and record immutable deployment references
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image_auth_dir=$(mktemp -d)
+          export DOCKER_CONFIG="$image_auth_dir"
+          trap 'rm -rf -- "$image_auth_dir"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          printf '## Tested image digests\n\nDeployment remains an explicit approval step.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          for component in postgres garage api web; do
+            image="ghcr.io/robyrew/chatforge-$component"
+            docker tag "chatforge-$component:ci" "$image:$GITHUB_SHA"
+            docker push "$image:$GITHUB_SHA"
+            digest=$(docker buildx imagetools inspect "$image:$GITHUB_SHA" --format '{{json .Manifest}}' | jq -er '.digest')
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            printf -- '- CHATFORGE_%s_IMAGE=%s@%s\n' "${component^^}" "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          done
+          # No mutable deployment tag and no webhook: production selects all four approved digests.

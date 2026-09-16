@@ -1,12 +1,14 @@
 # ChatForge API (Hono). Build context = repo root (needs workspace packages).
 FROM node:22-alpine AS runtime
 WORKDIR /app
-COPY package.json package-lock.json* tsconfig.base.json .npmrc ./
+RUN apk upgrade --no-cache \
+  && npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+COPY package.json package-lock.json tsconfig.base.json .npmrc ./
 COPY packages ./packages
-COPY apps/api ./apps/api
+COPY apps ./apps
 # Install ALL deps incl. dev: the API runs via tsx and migrates via drizzle-kit (both devDeps).
 # --include=dev guards against build hosts that default NODE_ENV=production.
-RUN npm install --include=dev --no-audit --no-fund --no-package-lock \
+RUN npm ci --include=dev --ignore-scripts --no-audit --no-fund \
   && chown -R node:node /app
 USER node
 # Production only at *runtime* (keeps the install above with devDeps; also disables the API's

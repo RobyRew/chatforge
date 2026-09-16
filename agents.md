@@ -416,6 +416,23 @@ Migration `0012`.
 
 ---
 
+## ADR-0028 — Self-hosted Garage and digest-selected production images (2026-09-16) · Accepted
+
+**Context:** ChatForge is stopped, its original volumes intact. The previous MinIO image has
+security findings and its upstream is archived. The user requires storage to remain on this VPS,
+security checks before publishing, and durable deployment/backup configuration.
+**Decision:** Garage 2.4.1 with the unchanged official binary, named metadata/data volumes,
+bucket-scoped S3 credentials and no public storage/admin ports. Production is a separate image-only
+Compose file; CI builds and scans four images off-host and tests synthetic persistence/authentication
+before publishing. Operators select all four immutable digests from one successful run. No implicit
+deployment on push. Remove the legacy MinIO-root credential fallback and obsolete npm peer bypass.
+**Rationale:** preserve existing data and protections, avoid server builds, make future releases
+repeatable, and fail closed on missing secrets or the existing database volume.
+**Limitations:** one VPS is not HA; upstream recommends redundant Garage nodes for production.
+Independent encrypted backups and a restore drill are required. Crypto-library audit and device-at-rest
+sealing limitations in prior ADRs are unchanged. The production cutover and credential rotations
+must pass the checklist in `docs/production-recovery.md`; adding this code does not complete them.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.

@@ -18,6 +18,14 @@ coverage/
 .env
 .env.*
 !.env.example
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileconfig
+secrets/
+credentials/
 
 # logs
 *.log

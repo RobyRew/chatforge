@@ -1,57 +1,39 @@
 name: chatforge
 
-# Local dev stack + deployable services. Every secret/URL falls back to a dev default but is
-# overridable via env — set real values in Dokploy (Compose → Environment) for production.
-# `docker compose up` runs everything with the dev defaults; or run only postgres/minio/mailpit
-# and use `npm run dev`.
-#
-# Published ports are bound to 127.0.0.1 on purpose. Docker publishes to
-# 0.0.0.0 by default, which on the VPS put Postgres and the API on every host
-# interface; only ufw-docker's default-deny kept them off the internet — one
-# firewall rule away from exposing the database. Traefik reaches `web` over
-# dokploy-network, not through a published port, so production routing is
-# unaffected, and localhost:5432 / :4321 / :8787 still work for local dev.
+# LOCAL DEVELOPMENT ONLY. Production uses docker-compose.production.yml.
+# Never reuse these development credentials on the VPS. All published ports are loopback-only.
 services:
   postgres:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: infra/postgres.Dockerfile
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-chatforge}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatforge}
       POSTGRES_DB: ${POSTGRES_DB:-chatforge}
     ports: ['127.0.0.1:5432:5432']
-    # NAMED VOLUME — see the note on the minio service. This was a relative bind (./.data/postgres)
-    # until 2026-08-27, when a deploy refreshed the checkout and deleted the live PGDATA out from
-    # under the running server. Restored from the nightly pg_dumpall. Never point this at a path
-    # inside the deploy checkout again.
+    # Named volumes survive checkout replacement; never use a repository-relative data bind.
     volumes: ['chatforge-postgres:/var/lib/postgresql/data']
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-chatforge}']
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 10s
       timeout: 5s
       retries: 5
 
-  minio:
-    # Object storage for chat attachments + avatars (P3). Reached only over the compose network —
-    # the published ports are localhost-only and Traefik has no route to it.
-    # Measures ~70 MB RSS on the VPS. Swap is provisioned by the Ansible `common` role.
-    # The Docker Hub repository is no longer the maintained distribution path. Pin the
-    # amd64 manifest digest so a redeploy cannot silently change the object-store image.
-    image: quay.io/minio/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2
-    command: server /data --console-address ":9001"
+  garage:
+    build:
+      context: .
+      dockerfile: infra/garage.Dockerfile
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-chatforge123}
-    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
-    # NAMED VOLUME, not a bind mount under the repo. A relative bind lands inside the directory the
-    # deploy tool checks the repo out into — and a refresh there deleted this directory out from
-    # under a running MinIO in production (2026-08-27), leaving it writing to a phantom path and
-    # failing every upload with "Resource requested is unreadable". A named volume lives in
-    # /var/lib/docker/volumes and no git operation can touch it.
-    volumes: ['chatforge-minio:/data']
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0000000000000000000000000000000000000000000000000000000000000000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-local-development}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-local-development-only}
+      S3_BUCKET: ${S3_BUCKET:-chatforge}
+    ports: ['127.0.0.1:3900:3900']
+    volumes: ['chatforge-garage-data:/data', 'chatforge-garage-metadata:/metadata']
 
   mailpit:
     image: axllent/mailpit:latest
-    # Dev-only (local SMTP capture). Not started in prod.
     profiles: ['dev']
     ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
 
@@ -63,38 +45,23 @@ services:
       PORT: 8787
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4321}
       DATABASE_URL: ${DATABASE_URL:-postgres://chatforge:chatforge@postgres:5432/chatforge}
-      # Identity is delegated to Logto (ADR-0023). The app is a Traditional Web (confidential) client,
-      # so the secret stays here on the server and never reaches the browser. Redirect URI in the
-      # Logto console must be <APP_BASE_URL>/api/auth/callback. See docs/auth-logto.md.
       LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-https://auth.robyrew.com}
       LOGTO_APP_ID: ${LOGTO_APP_ID:-}
       LOGTO_APP_SECRET: ${LOGTO_APP_SECRET:-}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:4321}
-      # First-run owner — the first sign-in with this email is granted `owner` (once), then inert.
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-      # Object storage for attachments + avatars.
-      # Credentials: the API falls back to the MinIO root credentials below, so setting
-      # MINIO_ROOT_USER / MINIO_ROOT_PASSWORD is enough — there is no second pair to keep in sync.
-      # Set S3_ACCESS_KEY / S3_SECRET_KEY only to point at an external S3 (they take precedence).
-      # With no credentials at all, uploads are disabled (blob routes answer 503); nothing else breaks.
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: http://garage:3900
+      S3_REGION: us-east-1
       S3_BUCKET: ${S3_BUCKET:-chatforge}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chatforge}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-chatforge123}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-local-development}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-local-development-only}
       BLOB_QUOTA_BYTES: ${BLOB_QUOTA_BYTES:-536870912}
-      # Spotify "now playing" (optional). Redirect URI must be
-      # <APP_BASE_URL>/api/integrations/spotify/callback. Blank = integration disabled (503).
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
     ports: ['127.0.0.1:8787:8787']
     depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_started
+      postgres: {condition: service_healthy}
+      garage: {condition: service_healthy}
 
   web:
     build:
@@ -104,5 +71,7 @@ services:
     depends_on: [api]
 
 volumes:
-  chatforge-minio:
   chatforge-postgres:
+  chatforge-garage-data:
+  chatforge-garage-metadata:
+  # Existing chatforge-minio volumes are retained by Docker, never migrated/deleted implicitly.

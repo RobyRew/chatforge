@@ -13,15 +13,16 @@ used by the stack are in [`docker-compose.yml`](../docker-compose.yml).
 3. **Save**, then **Deploy** (saving alone does not restart anything).
 
 Dokploy writes that box to `/etc/dokploy/compose/<app>/code/.env` and Docker Compose uses it to fill
-in the `${VAR}` placeholders in `docker-compose.yml`.
+in the `${VAR}` placeholders in `docker-compose.production.yml`. The root `docker-compose.yml`
+is development-only. Use the [production release checklist](production-recovery.md) for the VPS.
 
 > **The one rule that bites:** a variable only reaches a container if it is listed under that
 > service's `environment:` block in `docker-compose.yml`. Setting a var in Dokploy that compose
 > doesn't forward does nothing at all — it will be silently ignored. If you add a new setting, add it
 > to `environment:` in the same commit.
 
-**In local development:** copy `apps/api/.env.example` to `apps/api/.env`. Every value has a working
-dev default, so `docker compose up` and `npm run dev` both work with no configuration.
+**In local development:** copy `apps/api/.env.example` to `apps/api/.env`. The converter can run
+without a backend; authenticated features still require a separately configured Logto application.
 
 ## Identity (Logto)
 
@@ -55,17 +56,15 @@ until it is — that is intentional, not a crash.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `MINIO_ROOT_USER` | recommended | Username for the bundled MinIO. Default `chatforge` |
-| `MINIO_ROOT_PASSWORD` | recommended | Password for the bundled MinIO. **Set a real secret.** Minimum 8 characters |
-| `S3_ENDPOINT` | — | Default `http://minio:9000` (the compose service) |
-| `S3_BUCKET` / `S3_REGION` | — | Default `chatforge` / `us-east-1`. The bucket is created automatically on first use |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | only for external S3 | Point at Backblaze B2 or similar. **These take precedence over the MinIO values** |
+| `GARAGE_RPC_SECRET` | production | Independent 32-byte random hex secret, storage service only |
+| `S3_ENDPOINT` | — | `http://garage:3900` inside compose; loopback port 3900 for host-side development |
+| `S3_BUCKET` / `S3_REGION` | — | `chatforge` / `us-east-1`; Garage provisions the bucket at startup |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | production | One dedicated random pair shared by Garage provisioning and the API, scoped to bucket read/write |
 | `BLOB_QUOTA_BYTES` | — | Per-user storage cap. Default `536870912` (512 MB) |
 
-**You normally only set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD`.** The API falls back to them, so
-there is one credential pair, not two to keep in sync. Setting `S3_SECRET_KEY` to something *different*
-from `MINIO_ROOT_PASSWORD` is the classic mistake — it fails with an opaque
-`SignatureDoesNotMatch` in the API log and every upload breaks.
+There is no MinIO-root credential fallback. Production Compose fails when the S3 pair is missing.
+Garage's existing keys are persistent: changing the secret for the same key ID only in an environment
+file does not rotate the stored key. Follow the explicit rotation procedure in the recovery runbook.
 
 **With no credentials at all**, uploads are simply disabled: the blob routes answer `503` and the rest
 of the app is unaffected. That's a supported way to run ChatForge, not a broken state.
@@ -91,11 +90,12 @@ that secret invalidates stored integration tokens** and users must reconnect. Se
 
 ## Verifying what actually reached a container
 
-Guessing is the enemy here. Ask the container:
+Check presence without exposing values:
 
 ```bash
-sudo docker exec <api-container> printenv | sort
+sudo docker exec <api-container> node -e 'for (const k of ["DATABASE_URL", "LOGTO_APP_SECRET", "S3_ACCESS_KEY", "S3_SECRET_KEY"]) console.log(k + ": " + (process.env[k] ? "set" : "missing"))'
 ```
 
 Find the container name with `sudo docker ps --format '{{.Names}}'`. If a variable you set in Dokploy
-isn't in that list, it isn't forwarded in `docker-compose.yml` — that's the bug, not the value.
+is reported missing, check its explicit environment mapping. Never print all environment variables,
+rendered Compose configuration, or control-plane responses into diagnostics.

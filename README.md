@@ -19,7 +19,7 @@ See [`agents.md`](./agents.md) for the architecture decision log — the source 
 - **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
   server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Identity via self-hosted **Logto** (OIDC),
   data in Postgres/Drizzle, blobs in S3-compatible object storage.
-- **Infra**: multi-stage Dockerfiles (web → nginx-unprivileged, api → node:22), nginx CSP, `docker compose` (Postgres/MinIO/Mailpit), Dokploy notes.
+- **Infra**: non-root images, nginx CSP, local `docker compose` (Postgres/Garage/Mailpit), and a separate image-only production compose with gated CI builds.
 
 ## Documentation
 
@@ -29,13 +29,15 @@ Full docs live in **[`docs/`](docs/)** — start at [docs/README.md](docs/README
 |---|---|
 | [architecture.md](docs/architecture.md) | How it fits together, and exactly what the server can and cannot see |
 | [configuration.md](docs/configuration.md) | Every environment variable, and where to set it |
-| [storage.md](docs/storage.md) | Attachments, avatars, MinIO, backups |
+| [storage.md](docs/storage.md) | Attachments, avatars, storage, backups |
+| [production-recovery.md](docs/production-recovery.md) | Security gates, Garage replacement, credential rotation and release procedure |
 | [auth-logto.md](docs/auth-logto.md) | Sign-in, sessions, roles |
 | [operations.md](docs/operations.md) | Production runbook — symptoms → causes → fixes |
 | [infra/dokploy/DEPLOY.md](infra/dokploy/DEPLOY.md) | Deploying to the VPS |
 | [agents.md](agents.md) | Decision log (ADRs) — *why* each choice was made |
 
-**Verified:** 65 tests green (core 25 · api 33 · crypto 7); all packages TypeScript-strict-clean; web builds.
+The unit suite contains 103 tests (core 25 · api 63 · crypto 15). The real S3 contract test requires
+an explicit disposable endpoint and is run by the image workflow; it is skipped in ordinary unit runs.
 
 ## Not yet (next iteration)
 MLS safety-number key verification · Spotify “now playing” status · api-client codegen from OpenAPI ·
@@ -48,11 +50,11 @@ Meta/Discord/Signal importers · attachment garbage collection · native apps.
 
 ## Quickstart
 ```bash
-npm install                              # installs all workspaces
+npm ci --ignore-scripts                   # installs the committed lockfile, npm 11.19.1
 npm test                                 # run every workspace's tests (turbo)
 npm run dev:web                          # converter UI at http://localhost:4321 (no backend needed)
 npm run dev   --workspace @chatforge/api # API at http://localhost:8787 ( /health, /openapi.json )
-docker compose up                        # full local stack: web + api + postgres + minio + mailpit
+docker compose up                        # local web + api + postgres + garage (Mailpit: --profile dev)
 ```
 
 ## Privacy

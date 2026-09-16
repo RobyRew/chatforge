@@ -1,24 +1,12 @@
-# Deploying ChatForge on Dokploy (IONOS VPS)
+# ChatForge on Dokploy
 
-Two apps, deployed independently behind Traefik (Let's Encrypt), matching the existing
-infra (Dokploy + Traefik v3 + Tailscale + Beszel + Restic→B2).
+Use [the production recovery and release runbook](../../docs/production-recovery.md).
+Production is a single-origin Compose deployment using `docker-compose.production.yml`:
+CI-built, scanned images selected by digest; no VPS builds or development credentials.
 
-## Web (SPA)
-- **Type:** Dockerfile → `infra/web.Dockerfile` (build context = repo root)
-- **Port:** 8080 (nginx-unprivileged)
-- **Domain:** e.g. `chatforge.<domain>`
-- Append the API origin to `connect-src` in `infra/nginx.conf` before going live.
+Keep the existing Dokploy project identity and database volume. Route HTTPS only to web port
+8080; nginx proxies `/api/` and `/ws` internally. PostgreSQL and Garage have no host port
+bindings. Application secrets stay in Dokploy's protected environment, never in Git or build args.
 
-## API (Hono)
-- **Type:** Dockerfile → `infra/api.Dockerfile` (build context = repo root)
-- **Port:** 8787 (`/health` for healthchecks)
-- **Env:** `PORT`, `CORS_ORIGIN=https://chatforge.<domain>`, `DATABASE_URL`, `S3_*`
-- **Domain:** e.g. `api.chatforge.<domain>`
-
-## Backing services
-- **Postgres** — Dokploy database (or the compose service). Run `npm run db:migrate -w @chatforge/api` after wiring Drizzle.
-- **Object storage** — Backblaze B2 (already used for Restic) or self-hosted MinIO. Stores **ciphertext only**.
-
-## Notes
-- Both images are non-root with healthchecks.
-- Secrets via Dokploy env (never committed). Keep `.env` out of git (see `.gitignore`).
+Auto-deploy remains paused until the recovery checklist, credential rotations, backup/restore
+tests and end-user checks are complete. The root compose file is **local development only**.

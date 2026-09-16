@@ -12,7 +12,7 @@ export interface Env {
   appBaseUrl: string;
   /** First-run owner: the user who first signs in with this email is granted the 'owner' role (once). */
   adminEmail?: string;
-  /** S3-compatible object storage for blobs (MinIO on the VPS / Backblaze B2). */
+  /** S3-compatible object storage for blobs (self-hosted Garage). */
   s3: S3Env;
   /** Per-user storage quota in bytes (attachments + avatars). */
   blobQuotaBytes: number;
@@ -31,11 +31,9 @@ export interface S3Env {
 export function loadEnv(): Env {
   const port = Number(process.env.PORT ?? 8787);
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:4321';
-  // The bundled MinIO's root credentials are the fallback, so the stack needs ONE credential pair
-  // rather than two that must be kept in sync by hand (getting that wrong fails every upload with
-  // an opaque SignatureDoesNotMatch). Explicit S3_* always wins — that's the external-S3 path.
-  const accessKey = process.env.S3_ACCESS_KEY || process.env.MINIO_ROOT_USER || '';
-  const secretKey = process.env.S3_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || '';
+  // Explicit bucket-scoped credentials only; never fall back to object-store administrator keys.
+  const accessKey = process.env.S3_ACCESS_KEY || '';
+  const secretKey = process.env.S3_SECRET_KEY || '';
   const env: Env = {
     port,
     corsOrigin,
@@ -44,7 +42,7 @@ export function loadEnv(): Env {
     logtoAppSecret: process.env.LOGTO_APP_SECRET ?? '',
     appBaseUrl: (process.env.APP_BASE_URL ?? corsOrigin).replace(/\/+$/, ''),
     s3: {
-      endpoint: (process.env.S3_ENDPOINT ?? 'http://minio:9000').replace(/\/+$/, ''),
+      endpoint: (process.env.S3_ENDPOINT ?? 'http://garage:3900').replace(/\/+$/, ''),
       region: process.env.S3_REGION ?? 'us-east-1',
       bucket: process.env.S3_BUCKET ?? 'chatforge',
       accessKey,

@@ -10,3 +10,11 @@ tmp
 **/.env
 **/.env.*
 !**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.mobileconfig
+**/secrets
+**/credentials
+**/.envrc

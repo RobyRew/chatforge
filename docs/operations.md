@@ -8,7 +8,8 @@ ssh -p 2222 cosmin@<vps>          # key-only; never attempt root (fail2ban will 
 sudo docker ps --format '{{.Names}}'
 ```
 
-Container names look like `tools-chatforge-<hash>-{api,web,postgres,minio}-1`.
+Container names after recovery look like `tools-chatforge-<hash>-{api,web,postgres,garage}-1`.
+The production cutover is still gated by [production-recovery.md](production-recovery.md).
 
 ## First thing, every time
 
@@ -32,8 +33,9 @@ OOM-killed:
 sudo dmesg -T | grep -i "killed process" | tail
 ```
 
-Approximate steady-state footprint: Dokploy ~130 MB, AdGuard ~110 MB, MinIO ~70 MB, Logto ~40 MB,
-Traefik ~30 MB, ChatForge api ~25 MB, Postgres ~15 MB.
+Measure current container and kernel usage instead of relying on historical RSS estimates.
+The replacement limits PostgreSQL/Garage/API/web to 128/128/192/32 MiB respectively. Limits are
+ceilings, not reservations; leave host headroom and watch for OOMs during migrations and uploads.
 
 If Postgres becomes unreachable, **every** auth endpoint returns 500 while the app itself looks
 healthy — the WebSocket still upgrades and `/api/me` returns 401 rather than 502. That specific
@@ -41,8 +43,10 @@ combination means "database", not "API down".
 
 ## Deploying
 
-Push to `main` → Dokploy redeploys (or click Deploy). On boot the API runs `drizzle-kit migrate`
-against the committed SQL in `apps/api/drizzle/`, then seeds the built-in roles, then serves.
+Push to `main` → CI builds and tests images. Production deployment is explicit: select the four
+approved digests and use `docker-compose.production.yml`, as described in the recovery runbook.
+Auto-deploy remains paused. On boot the API runs `drizzle-kit migrate` against committed SQL,
+then starts and bootstraps built-in roles; check the database rather than relying on HTTP alone.
 
 A deploy can report success while Swarm has actually rolled the service back. Confirm with the
 container's own logs and uptime rather than trusting the deploy status:
@@ -65,8 +69,9 @@ That dump is what saved the database on 2026-08-27 — keep it working. The scri
 dump comes back empty, which is deliberate: a silent no-op would leave the snapshot with no usable
 copy.
 
-**Restic must also cover the MinIO volume** (`chatforge-minio`) — attachments exist nowhere else and
-are not in any logical dump.
+**Restic must also cover both Garage volumes**, with a fresh consistent metadata snapshot before
+copying. Keep the original `chatforge-minio` volume backed up while it is retained. Attachments are
+not in the logical database dump. A restore drill is required before declaring recovery complete.
 
 ### Restoring the database
 
@@ -86,7 +91,7 @@ dump, so the API applies whatever migrations came after it on the next start.
 |---|---|---|
 | All `/api/auth/*` return 500; `/api/me` returns 401; `/ws` still upgrades | Postgres unreachable | Restart Postgres; check memory and disk |
 | Sign-in redirects then errors | Logto redirect URI mismatch, or empty `LOGTO_APP_ID`/`SECRET` | [configuration.md](configuration.md#identity-logto) |
-| Uploads fail; log says `SignatureDoesNotMatch` | `S3_SECRET_KEY` ≠ `MINIO_ROOT_PASSWORD` | Clear the `S3_*` keys; the API falls back to MinIO's |
+| Uploads fail; log says `SignatureDoesNotMatch` | S3 pair does not match Garage's persistent key | Check the bucket-scoped key; never substitute root credentials |
 | Uploads 503 | No storage credentials reached the container | [configuration.md](configuration.md#object-storage-attachments--avatars) |
 | Every site on the box returns 000/connection refused while Traefik shows "Up" | ufw-docker gwbridge IP drift (host-wide, not ChatForge) | Self-heals via the 5-minute timer; see the infrastructure repo |
 | "X hasn't opened Chat yet (no encryption keys published)" | The peer has never loaded `/chat`, so has no MLS KeyPackages | Ask them to open Chat once |

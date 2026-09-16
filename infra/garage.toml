@@ -1,0 +1,20 @@
+# Single-host storage: retain independent encrypted off-host backups.
+metadata_dir = "/metadata"
+data_dir = "/data"
+db_engine = "sqlite"
+replication_factor = 1
+metadata_fsync = true
+data_fsync = true
+metadata_auto_snapshot_interval = "1h"
+block_ram_buffer_max = 16777216
+block_max_concurrent_reads = 4
+block_max_concurrent_writes_per_request = 2
+
+# RPC is container-local; GARAGE_RPC_SECRET is supplied only at runtime.
+rpc_bind_addr = "127.0.0.1:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "us-east-1"
+api_bind_addr = "0.0.0.0:3900"
+# No public website, admin HTTP listener, or discovery service is enabled.

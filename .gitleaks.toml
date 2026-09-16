@@ -1,0 +1,11 @@
+title = "ChatForge secret detection"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The package description names algorithms, not an API key"
+condition = "AND"
+paths = ['''^packages/crypto/package\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"description": "Client-side E2E crypto: Argon2id key hierarchy, XChaCha20-Poly1305 blob sealing, BIP39 recovery, MLS (?:stubs|\(ts-mls\) provider)\.",$''']
