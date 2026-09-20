@@ -6,6 +6,12 @@ import sys
 from urllib.parse import unquote, urlsplit
 
 
+def _bytes(value):
+    # `docker compose config --format json` renders mem_limit as the byte count in a STRING
+    # ("134217728"), not a number; compare it as an integer either way.
+    return int(str(value))
+
+
 def check(config, ci=False):
     services = config['services']
     assert set(services) == {'postgres', 'garage', 'api', 'web'}, 'unexpected service set'
@@ -21,7 +27,7 @@ def check(config, ci=False):
         assert service.get('cap_drop') == ['ALL'], 'capabilities must be dropped'
         assert 'no-new-privileges:true' in service.get('security_opt', []), 'privilege escalation protection missing'
         assert 0 < service.get('pids_limit', 0) <= 96, 'missing process limit'
-        assert 0 < service.get('mem_limit', 0) <= 201326592, 'missing memory limit'
+        assert 0 < _bytes(service.get('mem_limit', 0)) <= 201326592, 'missing memory limit'
         assert not service.get('privileged'), 'privileged service forbidden'
     api, pg, garage = (services[name]['environment'] for name in ('api', 'postgres', 'garage'))
     assert api['NODE_ENV'] == 'production', 'production authentication mode required'
@@ -55,7 +61,11 @@ if __name__ == '__main__':
         ci_mode = sys.argv[1:] == ['--ci'] and os.environ.get('GITHUB_ACTIONS') == 'true'
         assert not sys.argv[1:] or ci_mode, 'CI override requires disposable CI runner'
         check(json.load(sys.stdin), ci=ci_mode)
-    except (AssertionError, KeyError, ValueError, TypeError):
+    except (AssertionError, KeyError) as exc:
+        # The assertion messages and key names above are our own literals and carry no
+        # values from the payload, so naming the failed check is safe; the payload is not.
+        sys.exit(f'Production configuration validation failed: {exc}')
+    except (ValueError, TypeError):
         # Even malformed input can contain credentials. Never emit the exception or payload.
         sys.exit('Production configuration validation failed; inspect settings privately.')
     print('Production configuration checks passed; no secret values emitted.')
