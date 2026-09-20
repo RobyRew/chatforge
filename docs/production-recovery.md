@@ -2,9 +2,25 @@
 
 ## Deployment gate
 
-ChatForge's automatic deployment is paused. The old PostgreSQL and MinIO volumes are retained.
-Do not deploy the development compose file or restart the archived MinIO image.
-This document describes the replacement; it is not a claim that production recovery is complete.
+ChatForge's automatic deployment stays paused: pushes build and test images but never restart
+production. Promotion is the explicit step described under "Subsequent releases". The old
+MinIO volume is retained and unmounted. Do not deploy the development compose file or start the
+archived MinIO image.
+
+### Recovery record, 2026-09-20
+
+Production was switched to `docker-compose.production.yml` with the four digests from workflow
+run `35534949720` (application revision `b8ef6a5`), pulled anonymously from GHCR (the repository
+and its packages are public). The PostgreSQL role password was rotated inside the existing
+volume before the deploy (1 user, 13 applied migrations at that moment), fresh Garage and S3
+credentials were generated, the `MINIO_*`, `ADMIN_PASSWORD` and `PORT` variables were removed
+from the Dokploy environment, and the MinIO volume held no objects (only `.minio.sys`).
+Observed right after the deploy: all four containers healthy with the documented non-root,
+read-only, cap-dropped limits; `RepoDigests` of the running images equal to the four approved
+digests; HTTPS 200 on `/`, 401 on `/api/me`, 403 on `/.git/config`, the CSP/HSTS/frame/content-
+type headers present; a logical dump written; a Restic snapshot taken with the Garage metadata
+snapshot hook. Still open: rotating `LOGTO_APP_SECRET` in the Logto console (see step 2) and the
+isolated restore drill (step 9).
 
 `Build and test production images` installs the lockfile with Node 22 / npm 11.19.1, rejects npm
 advisories at moderate or above, runs uncached tests/typechecks/build, builds off-host, and rejects
