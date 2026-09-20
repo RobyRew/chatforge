@@ -49,7 +49,8 @@ def check(config, ci=False):
         assert urlsplit(api['LOGTO_ENDPOINT']).scheme == 'https', 'HTTPS issuer required'
         assert len(api['LOGTO_APP_SECRET']) >= 16, 'identity secret missing or too short'
     assert config['volumes']['chatforge-postgres']['external'] is True, 'existing external database volume required'
-    assert config['networks']['storage']['internal'] is True, 'storage network must be internal'
+    if not ci:
+        assert config['networks']['storage']['internal'] is True, 'storage network must be internal'
     assert set(services['postgres']['networks']) == {'storage'}, 'database network exposure'
     assert set(services['garage']['networks']) == {'storage'}, 'storage network exposure'
     assert set(services['api']['networks']) == {'storage', 'application'}, 'API network exposure'

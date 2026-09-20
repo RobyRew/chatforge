@@ -18,3 +18,11 @@ services:
     healthcheck:
       interval: 5s
       start_period: 5s
+
+# Docker does not bind a published port for a container whose only network is
+# `internal`, so the storage-contract test could never reach 127.0.0.1:13900
+# (run 35534610742: ECONNREFUSED). The disposable CI stack lifts `internal`
+# on the storage network; production keeps it and the checker enforces that.
+networks:
+  storage:
+    internal: false
