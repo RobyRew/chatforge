@@ -10,7 +10,7 @@ COPY apps ./apps
 RUN npm ci --include=dev --ignore-scripts --no-audit --no-fund
 RUN npm run build --workspace @chatforge/web
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.30-alpine AS runtime
 USER root
 RUN apk upgrade --no-cache && rm -f /etc/nginx/conf.d/default.conf
 COPY --chown=nginx:nginx infra/security-headers.conf /etc/nginx/snippets/security-headers.conf
