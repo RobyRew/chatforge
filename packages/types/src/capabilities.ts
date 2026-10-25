@@ -32,4 +32,6 @@ export type Capability = z.infer<typeof CapabilitySchema>;
 
 /** Which capabilities a plugin supports (true) or not (false / absent). */
 export type CapabilityMatrix = Partial<Record<Capability, boolean>>;
-export const CapabilityMatrixSchema = z.record(CapabilitySchema, z.boolean());
+// partialRecord, not record: since zod 4 a record keyed by an enum requires every key,
+// while a matrix may leave capabilities out.
+export const CapabilityMatrixSchema = z.partialRecord(CapabilitySchema, z.boolean());

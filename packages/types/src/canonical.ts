@@ -33,7 +33,7 @@ export const MessageEntitySchema = z.object({
   url: z.string().optional(),
   /** For `pre` (code block) entities. */
   language: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type MessageEntity = z.infer<typeof MessageEntitySchema>;
 
@@ -71,7 +71,7 @@ export const AttachmentSchema = z.object({
   durationSec: z.number().nonnegative().optional(),
   caption: RichTextSchema.optional(),
   thumbnailRef: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type Attachment = z.infer<typeof AttachmentSchema>;
 
@@ -90,7 +90,7 @@ export const ParticipantSchema = z.object({
   /** Phone numbers / usernames / handles seen for this participant. */
   handles: z.array(z.string()).optional(),
   avatarRef: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type Participant = z.infer<typeof ParticipantSchema>;
 
@@ -129,7 +129,7 @@ export const MessageSchema = z.object({
   reactions: z.array(ReactionSchema).optional(),
   editedAt: z.number().int().optional(),
   deleted: z.boolean().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
   /** Original platform payload, preserved verbatim for round-trip fidelity. */
   raw: z.unknown().optional(),
 });
@@ -155,6 +155,6 @@ export const ConversationSchema = z.object({
   participants: z.array(ParticipantSchema).default([]),
   messages: z.array(MessageSchema).default([]),
   media: z.array(MediaItemSchema).optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;

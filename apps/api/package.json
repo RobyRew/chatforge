@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "ChatForge backend \u2014 Hono + zod-openapi + Drizzle, RBAC admin, opt-in server-side conversion sandbox.",
+  "description": "ChatForge backend — Hono + zod-openapi + Drizzle, RBAC admin, opt-in server-side conversion sandbox.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
@@ -22,13 +22,13 @@
     "@chatforge/core": "*",
     "@chatforge/types": "*",
     "@hono/node-server": "^1.13.7",
-    "@hono/zod-openapi": "^0.18.3",
+    "@hono/zod-openapi": "^1.6.3",
     "@logto/node": "^3.0.0",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.6.16",
+    "hono": "^4.13.14",
     "pg": "^8.13.1",
     "ws": "^8.21.0",
-    "zod": "^3.24.1"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@chatforge/crypto": "*",
@@ -39,6 +39,6 @@
     "esbuild": "^0.25.4",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

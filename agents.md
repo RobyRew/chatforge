@@ -433,6 +433,25 @@ Independent encrypted backups and a restore drill are required. Crypto-library a
 sealing limitations in prior ADRs are unchanged. The production cutover and credential rotations
 must pass the checklist in `docs/production-recovery.md`; adding this code does not complete them.
 
+## ADR-0029 — zod 4 and @hono/zod-openapi 1.x (2026-10-25) · Accepted
+
+**Context:** `npm audit` in CI started failing on GHSA-mrhx-c7xc-m3w5 (high): zod through 4.6.5
+accumulates one issue object per failing array element with no cap, so a large array posted to a
+schema without a length limit can exhaust memory. zod 3 has no patched release; the fix is 4.6.6.
+The same audit flagged hono (serveStatic double decode), vite, vitest's mocker and source-map-js.
+**Decision:** move `@chatforge/types`, `@chatforge/core` and `@chatforge/api` to zod ^4.6.7, and the
+API to `@hono/zod-openapi` ^1.6.3 (its zod 4 line) and hono ^4.13.14; vite ^6.4.5 and vitest ^4.1.12
+stay on their current majors. Two schema changes come with zod 4:
+- `z.record(valueSchema)` no longer exists; the five `meta` fields in `canonical.ts` are now
+  `z.record(z.string(), z.unknown())`, the same shape as before.
+- A record keyed by an enum is exhaustive in zod 4. `CapabilityMatrixSchema` uses `z.partialRecord`
+  so a matrix may still omit capabilities, matching the `Partial<Record<…>>` type it validates.
+`z.string().uuid()` stays; zod 4 checks RFC 9562 variant bits, which `crypto.randomUUID()` ids satisfy.
+**Rationale:** the API validates request bodies with zod, so the memory-exhaustion advisory applies to
+production, not only to tooling. ADR-0019's zod@3 constraint came from better-auth, which ADR-0023
+removed.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
