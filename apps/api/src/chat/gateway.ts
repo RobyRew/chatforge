@@ -50,6 +50,13 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
 
   const online = (userId: string): boolean => (registry.get(userId)?.size ?? 0) > 0;
 
+  /** A user's presence right now, in the same shape as the frames pushed when it changes. */
+  const presenceOf = async (userId: string): Promise<ServerFrame> => {
+    if (online(userId)) return { t: 'presence', userId, online: true, state: awayState.get(userId) ? 'away' : 'online' };
+    const lastSeenAt = await repo.getLastSeen(userId);
+    return { t: 'presence', userId, online: false, state: 'offline', ...(lastSeenAt != null ? { lastSeenAt } : {}) };
+  };
+
   const sendTo = (userId: string, frame: ServerFrame, except?: WebSocket): void => {
     const set = registry.get(userId);
     if (!set) return;
@@ -171,7 +178,15 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
               send(ws, { t: 'error', message: 'not a member' });
               return;
             }
-            if (frame.t === 'send') {
+            if (frame.t === 'sub') {
+              // Presence is otherwise pushed only when it changes, so a client that connected after
+              // its peers showed them as offline until they next connected, went away or came back.
+              // Clients subscribe to every conversation on connect and after each refresh, so
+              // answering here also covers a conversation created after this socket opened.
+              for (const m of await repo.memberIds(frame.conversationId)) {
+                if (m !== uid) send(ws, await presenceOf(m));
+              }
+            } else if (frame.t === 'send') {
               const msg = await repo.appendMessage(frame.conversationId, uid, frame.ciphertext);
               for (const m of await repo.memberIds(frame.conversationId)) {
                 sendTo(
@@ -218,7 +233,6 @@ export function createChatGateway({ server, repo, authenticate, path = '/ws' }: 
                 if (m !== uid) sendTo(m, { t: 'read', conversationId: frame.conversationId, userId: uid, seq: frame.seq });
               }
             }
-            // 'sub': membership validated above; nothing more needed for 1:1.
           } catch (e) {
             send(ws, { t: 'error', message: e instanceof Error ? e.message : 'error' });
           }

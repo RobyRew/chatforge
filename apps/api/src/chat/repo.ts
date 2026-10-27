@@ -1,7 +1,7 @@
-import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+import type { ChatMessageDTO, ContactDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import { getDb } from '../db';
-import { chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, user, userPresence } from '../db/schema';
+import { chatContacts, chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, user, userPresence } from '../db/schema';
 
 /**
  * Persistence boundary for chat. Bodies are opaque base64 `ciphertext` — the server never reads
@@ -46,6 +46,13 @@ export interface ChatRepo {
    * Blanks the ciphertext but keeps the row — `seq` is the shared id replies/reactions point at.
    */
   deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean>;
+  // ── Contacts (one-sided, owner-scoped) ──
+  /** The owner's saved contacts with their current profile fields, oldest first. */
+  listContacts(ownerId: string): Promise<ContactDTO[]>;
+  /** Save a contact. On one already saved, `nickname` replaces theirs; `undefined` leaves it as is. */
+  saveContact(ownerId: string, contactId: string, nickname: string | null | undefined): Promise<void>;
+  /** Remove a saved contact; false if the owner had not saved them. */
+  removeContact(ownerId: string, contactId: string): Promise<boolean>;
 }
 
 export class DrizzleChatRepo implements ChatRepo {
@@ -307,6 +314,40 @@ export class DrizzleChatRepo implements ChatRepo {
 
   async deleteWelcome(id: string, recipientId: string): Promise<void> {
     await this.db.delete(mlsWelcomes).where(and(eq(mlsWelcomes.id, id), eq(mlsWelcomes.recipientId, recipientId)));
+  }
+
+  async listContacts(ownerId: string): Promise<ContactDTO[]> {
+    const rows = await this.db
+      .select({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        username: user.username,
+        image: user.image,
+        statusEmoji: user.statusEmoji,
+        statusText: user.statusText,
+        nickname: chatContacts.nickname,
+        createdAt: chatContacts.createdAt,
+      })
+      .from(chatContacts)
+      .innerJoin(user, eq(chatContacts.contactId, user.id))
+      .where(eq(chatContacts.ownerId, ownerId))
+      .orderBy(asc(chatContacts.createdAt));
+    return rows.map((r) => ({ ...r, createdAt: r.createdAt.getTime() }));
+  }
+
+  async saveContact(ownerId: string, contactId: string, nickname: string | null | undefined): Promise<void> {
+    const insert = this.db.insert(chatContacts).values({ ownerId, contactId, nickname: nickname ?? null });
+    const target = [chatContacts.ownerId, chatContacts.contactId];
+    await (nickname === undefined ? insert.onConflictDoNothing({ target }) : insert.onConflictDoUpdate({ target, set: { nickname } }));
+  }
+
+  async removeContact(ownerId: string, contactId: string): Promise<boolean> {
+    const removed = await this.db
+      .delete(chatContacts)
+      .where(and(eq(chatContacts.ownerId, ownerId), eq(chatContacts.contactId, contactId)))
+      .returning({ contactId: chatContacts.contactId });
+    return removed.length > 0;
   }
 }
 

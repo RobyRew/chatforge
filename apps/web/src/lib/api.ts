@@ -3,7 +3,7 @@
  * so the Logto session cookie authenticates the admin endpoints. Errors surface the server's
  * `{ error }` message. The web treats permissions as opaque strings (the API is the source of truth).
  */
-import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+import type { ChatMessageDTO, ContactDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 
 /** Same-origin by default; only set VITE_API_URL when the SPA is served from another host. */
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? '';
@@ -178,6 +178,12 @@ export const api = {
     relayWelcome: (conversationId: string, recipientId: string, welcome: string): Promise<{ id: string }> =>
       post('/api/chat/welcomes', { conversationId, recipientId, welcome }),
     ackWelcome: (id: string): Promise<{ ok: boolean }> => del(`/api/chat/welcomes/${id}`),
+
+    listContacts: (): Promise<ContactDTO[]> => get<{ contacts: ContactDTO[] }>('/api/chat/contacts').then((r) => r.contacts),
+    /** Save by email or @username. Omit `nickname` to keep the current one; `null` clears it. */
+    saveContact: (handle: string, nickname?: string | null): Promise<ContactDTO> =>
+      post<{ contact: ContactDTO }>('/api/chat/contacts', nickname === undefined ? { handle } : { handle, nickname }).then((r) => r.contact),
+    removeContact: (userId: string): Promise<{ ok: boolean }> => del(`/api/chat/contacts/${encodeURIComponent(userId)}`),
   },
 
   integrations: (): Promise<Integrations> => get<Integrations>('/api/integrations'),

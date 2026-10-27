@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../../lib/api';
 import { useMe } from '../../lib/useMe';
 import { AuthPanel } from '../auth/AuthPanel';
+import { ContactsSection } from './ContactsSection';
 import { ConversationList } from './ConversationList';
 import { NewChat } from './NewChat';
 import { Thread } from './Thread';
@@ -55,6 +56,7 @@ function ChatApp({ me }: { me: Me }): ReactNode {
         <aside className="flex flex-col gap-3">
           <NewChat onCreated={openConversation} />
           <ConversationList state={state} activeId={activeId} onSelect={openConversation} />
+          <ContactsSection state={state} onOpen={openConversation} />
           <VaultSection activeId={activeVaultId} onOpen={openVault} />
         </aside>
         <section>

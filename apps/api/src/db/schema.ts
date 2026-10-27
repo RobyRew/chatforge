@@ -86,6 +86,25 @@ export const chatMessages = pgTable(
   (t) => ({ uqSeq: unique('chat_messages_conv_seq').on(t.conversationId, t.seq) }),
 );
 
+/**
+ * Saved contacts. One-sided: a row means "owner saved contact", and nothing is sent to or shown to
+ * the contact. `nickname` is the owner's private label (plaintext, like profile names).
+ */
+export const chatContacts = pgTable(
+  'chat_contacts',
+  {
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    nickname: text('nickname'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.ownerId, t.contactId] }) }),
+);
+
 export const userPresence = pgTable('user_presence', {
   userId: text('user_id')
     .primaryKey()

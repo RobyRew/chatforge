@@ -1,4 +1,4 @@
-import type { ChatMessageDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
+import type { ChatMessageDTO, ContactDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 import { stores } from '../stores';
 import type { ChatRepo } from './repo';
 
@@ -169,6 +169,33 @@ export class MemoryChatRepo implements ChatRepo {
     if (!c || !c.members.includes(userId)) return false;
     c.members = c.members.filter((m) => m !== userId);
     return true;
+  }
+
+  private contacts = new Map<string, Map<string, { nickname: string | null; createdAt: number }>>(); // owner -> contact -> entry
+
+  async listContacts(ownerId: string): Promise<ContactDTO[]> {
+    const mine = this.contacts.get(ownerId);
+    if (!mine) return [];
+    return [...mine.entries()]
+      .sort((a, b) => a[1].createdAt - b[1].createdAt)
+      .map(([id, c]) => ({ id, email: stores.users.get(id)?.email ?? id, nickname: c.nickname, createdAt: c.createdAt }));
+  }
+
+  async saveContact(ownerId: string, contactId: string, nickname: string | null | undefined): Promise<void> {
+    let mine = this.contacts.get(ownerId);
+    if (!mine) {
+      mine = new Map();
+      this.contacts.set(ownerId, mine);
+    }
+    const existing = mine.get(contactId);
+    mine.set(contactId, {
+      nickname: nickname === undefined ? (existing?.nickname ?? null) : nickname,
+      createdAt: existing?.createdAt ?? Date.now(),
+    });
+  }
+
+  async removeContact(ownerId: string, contactId: string): Promise<boolean> {
+    return this.contacts.get(ownerId)?.delete(contactId) ?? false;
   }
 
   async deleteMessage(conversationId: string, seq: number, requesterId: string): Promise<boolean> {

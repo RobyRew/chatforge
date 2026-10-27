@@ -109,6 +109,20 @@ the route cannot skip it.
 > A removed member keeps what they already received. That is forward secrecy behaving as designed:
 > MLS protects *future* messages after a re-key, not past ones already delivered.
 
+## Contacts and presence
+
+**Contacts** (`chat_contacts`, `/api/chat/contacts`) are a one-sided address book: saving someone
+stores "owner saved contact" plus an optional nickname, and sends nothing to the other person. A
+contact is always named by handle (email or `@username`), never by a raw user id, so a client can't
+attach an id that isn't a real user. The list is capped at 1000 per user and nicknames at 64 chars.
+Saving a contact grants nothing: it doesn't start a conversation, publish keys, or share presence.
+
+**Presence** (online / away / offline with last-seen) is shared only between people who share a
+conversation, never with contacts as such. The gateway pushes a frame whenever a user connects,
+reports away/active, or disconnects; and it answers every `sub` frame with the current state of
+that conversation's other members. Clients send `sub` for every conversation on connect and after
+each refresh, so someone who was already online when you opened Chat shows correctly at once.
+
 ## Verifying keys (safety numbers)
 
 A conversation is bootstrapped through KeyPackages the server relays, so a malicious server could
@@ -139,6 +153,7 @@ The honest table. Anything not listed as encrypted is stored in the clear.
 | Email, display name, username, bio, status | **Yes** | Profile data; needed to render a peer list |
 | **Avatar images** | **Yes — plaintext** | Deliberate: they're profile data like a display name. Encrypting them would make them unrenderable to peers for no real gain. Recorded as ADR-0024 |
 | Presence / typing / read receipts | **Yes** | Transient routing signals |
+| Saved contacts and their nicknames | **Yes — plaintext** | Needed to sync the list across devices. One-sided: the contact is never told and cannot see it. A nickname is the owner's private label, shown to nobody else, but readable by the server like a display name. ADR-0030 |
 
 **Metadata is not protected.** ChatForge protects content, not the social graph. If that distinction
 matters for a given threat model, this is not the right tool.
@@ -153,7 +168,7 @@ the generated SQL — it applies on the next deploy.
 |---|---|
 | Identity | `user` (keyed by `logto_sub`), `logto_sessions` |
 | Authorization | `roles`, `user_grants`, `feature_flags`, `audit_log` |
-| Chat | `chat_conversations`, `chat_members`, `chat_messages`, `user_presence` |
+| Chat | `chat_conversations`, `chat_members`, `chat_messages`, `user_presence`, `chat_contacts` |
 | Chat E2E (public artifacts only) | `key_packages`, `mls_welcomes` |
 | Content | `vault_conversations`, `blobs`, `conversions` |
 

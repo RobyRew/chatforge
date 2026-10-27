@@ -96,6 +96,50 @@ async function resolveHandle(raw: string): Promise<string | undefined> {
   return resolvePeerId({ username: value });
 }
 
+// ── Contacts ─────────────────────────────────────────────────────────────────
+// One-sided, like a phone contact: saving someone tells them nothing and shows them nothing. A
+// contact is always named by handle (email or @username), never by a raw user id, so the client
+// cannot attach an id that doesn't belong to a real user.
+
+const MAX_CONTACTS = 1000;
+const MAX_NICKNAME = 64;
+
+chatModule.get('/contacts', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  return c.json({ contacts: await getChatRepo().listContacts(me.id) });
+});
+
+/** Save someone, or rename someone already saved. Omitting `nickname` keeps the current one. */
+chatModule.post('/contacts', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  const body = (await c.req.json().catch(() => ({}))) as { handle?: unknown; nickname?: unknown };
+  if (typeof body.handle !== 'string' || !body.handle.trim()) return c.json({ error: 'handle required' }, 400);
+  let nickname: string | null | undefined;
+  if (body.nickname === null) nickname = null;
+  else if (typeof body.nickname === 'string') nickname = body.nickname.trim().slice(0, MAX_NICKNAME) || null;
+  else if (body.nickname !== undefined) return c.json({ error: 'nickname must be a string or null' }, 400);
+
+  const contactId = await resolveHandle(body.handle);
+  if (!contactId) return c.json({ error: 'no such user' }, 404);
+  if (contactId === me.id) return c.json({ error: 'cannot save yourself as a contact' }, 400);
+
+  const repo = getChatRepo();
+  const before = await repo.listContacts(me.id);
+  const existed = before.some((x) => x.id === contactId);
+  if (!existed && before.length >= MAX_CONTACTS) return c.json({ error: `at most ${MAX_CONTACTS} contacts` }, 409);
+  await repo.saveContact(me.id, contactId, nickname);
+  const contact = (await repo.listContacts(me.id)).find((x) => x.id === contactId);
+  return c.json({ contact }, existed ? 200 : 201);
+});
+
+chatModule.delete('/contacts/:userId', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  const contactId = c.req.param('userId');
+  if (contactId.length > 128) return c.json({ error: 'not found' }, 404);
+  if (!(await getChatRepo().removeContact(me.id, contactId))) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
+});
+
 chatModule.get('/conversations', requirePermission('chat:use'), async (c) => {
   const me = c.get('user')!;
   return c.json({ conversations: await getChatRepo().listConversations(me.id) });

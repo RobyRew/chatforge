@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ChatState } from '../../lib/chatClient';
+import { contactLabel, useContacts } from '../../lib/contacts';
 import { conversationLabel, peerLabel } from '../../lib/displayPref';
 import { Avatar } from './Avatar';
 
@@ -12,6 +13,7 @@ export function ConversationList({
   activeId: string | null;
   onSelect: (id: string) => void;
 }): ReactNode {
+  const { contacts } = useContacts();
   if (!state.conversations.length) {
     return <p className="px-1 py-3 text-xs text-zinc-500">No conversations yet. Start one above.</p>;
   }
@@ -30,7 +32,7 @@ export function ConversationList({
           : peer?.statusEmoji || peer?.statusText
             ? `${peer?.statusEmoji ?? ''} ${peer?.statusText ?? ''}`.trim()
             : null;
-        const label = conversationLabel({ ...c, peers: peer ? [peer] : c.peers });
+        const label = !isGroup && peer ? contactLabel(peer, contacts) : conversationLabel({ ...c, peers: peer ? [peer] : c.peers });
         return (
           <li key={c.id}>
             <button

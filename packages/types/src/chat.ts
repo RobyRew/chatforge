@@ -60,6 +60,16 @@ export interface ConversationPeer {
   statusText?: string | null;
 }
 
+/**
+ * Someone the user saved. One-sided, like a phone contact: the other person is not told and cannot
+ * see it. `nickname` is the owner's private label for them; it is stored server-side in plaintext,
+ * like profile names, so it is visible to the server (not to the contact or anyone else).
+ */
+export interface ContactDTO extends ConversationPeer {
+  nickname: string | null;
+  createdAt: number;
+}
+
 export interface ConversationSummary {
   id: string;
   /** Everyone except me. For a DM that's one person; for a group it's the rest of the members. */

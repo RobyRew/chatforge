@@ -92,6 +92,13 @@
       "when": 1787959150347,
       "tag": "0012_group_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793092890415,
+      "tag": "0013_contacts",
+      "breakpoints": true
     }
   ]
 }

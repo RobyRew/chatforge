@@ -131,6 +131,41 @@ describe('chat gateway (in-process, MemoryChatRepo)', () => {
     a.close();
   });
 
+  it("tells a client that connects later its peer's current state when it subscribes", async () => {
+    const { conversationId } = (await (await rest('/api/chat/conversations', 'POST', { userId: B }, 'owner-token')).json()) as {
+      conversationId: string;
+    };
+
+    // B is already connected before A arrives, so A never sees a presence *change* for B.
+    const b = client(B);
+    await b.ready;
+    await delay(30);
+
+    const a1 = client(A);
+    await a1.ready;
+    a1.send({ t: 'sub', conversationId });
+    expect(await a1.waitFor((f) => f.t === 'presence' && f.userId === B)).toMatchObject({ online: true, state: 'online' });
+    a1.close();
+
+    b.send({ t: 'active', away: true });
+    await delay(30);
+    const a2 = client(A);
+    await a2.ready;
+    a2.send({ t: 'sub', conversationId });
+    expect(await a2.waitFor((f) => f.t === 'presence' && f.userId === B)).toMatchObject({ online: true, state: 'away' });
+    a2.close();
+
+    b.close();
+    await delay(50);
+    const a3 = client(A);
+    await a3.ready;
+    a3.send({ t: 'sub', conversationId });
+    const offline = await a3.waitFor((f) => f.t === 'presence' && f.userId === B);
+    expect(offline).toMatchObject({ online: false, state: 'offline' });
+    expect(offline.t === 'presence' && typeof offline.lastSeenAt).toBe('number');
+    a3.close();
+  });
+
   it('closes an unauthenticated socket with 1008', async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const code = await new Promise<number>((resolve) => ws.on('close', (c) => resolve(c)));

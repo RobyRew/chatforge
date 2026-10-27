@@ -452,6 +452,30 @@ production, not only to tooling. ADR-0019's zod@3 constraint came from better-au
 removed.
 **Status:** Accepted.
 
+## ADR-0030 — Saved contacts; presence answered on subscribe (2026-10-27) · Accepted
+
+**Context:** Users wanted to keep people they had chatted with, and to give them a name. Separately,
+online/away/offline was unreliable: the gateway pushed presence only when it *changed* (connect,
+away/active, disconnect), so anyone already online when a client connected showed as offline on that
+client until they changed state. The existing gateway test waited for a change, so it never caught it.
+**Decision:**
+- **Contacts are a server-side, one-sided address book** (`chat_contacts`: owner, contact, optional
+  nickname). Server-side so the list follows the user across devices. One-sided like a phone contact:
+  the contact is not notified, cannot see the entry, and gains nothing from it. No presence, keys or
+  conversation come with saving someone.
+- **Nicknames are plaintext**, the same tier as display names and usernames. Sealing them with the
+  vault key would hide them from the server, but would make the list unreadable until the vault is
+  unlocked and add a per-device key problem to a convenience feature. The trade-off is listed in the
+  "what the server can see" table.
+- **Contacts are named by handle, never by raw user id**, so a client cannot attach an id that does
+  not belong to a real user (and cannot use the endpoint to probe ids). Capped at 1000 per user,
+  nicknames at 64 chars. Saving again without a `nickname` keeps the existing one.
+- **The gateway answers `sub` with the other members' current presence.** Clients already send `sub`
+  for every conversation on connect and after each refresh, so this one path covers both "peer was
+  online before I connected" and "conversation created after I connected". Presence stays scoped to
+  conversation peers; contacts do not widen it.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -505,4 +529,5 @@ against (2026-06-01):
 - [x] **Rich-chat roadmap P4 — key verification, Spotify, settings hub (ADR-0025)** — **safety numbers**: `MlsProvider.groupMembers()` + `@chatforge/crypto/safety-number` (60 digits, iterated SHA-512), computed in the Web Worker, verified state stored per-device only (IndexedDB v3), with a header badge that turns amber when a verified key changes. **Spotify now-playing**: read-only scope, server-side OAuth with an HMAC-signed `state`, tokens sealed at rest (`user_integrations`, migration `0010`), a poller that only runs for users with a live WebSocket and never clobbers a manual status. **Settings hub**: registry-driven sections (Profile / Chat / Privacy / Vault / Integrations) mirroring the admin console, plus a Privacy card that states plainly what is and isn't encrypted. 85 tests green; docs in `docs/integrations.md`.
 - [x] **P5 — message deletion, attachment GC, backup gap closed (ADR-0026)** — delete for everyone (sender-only, enforced in the WHERE clause) blanks the ciphertext but keeps the row so `seq` references stay valid; clients purge their local plaintext cache and render a tombstone, plus a local-only **Remove for me**. Attachments are linked to their message via `blobIds` on the send frame (the server can't read the payload, so it can't infer the link) and are reclaimed on delete, with an hourly sweeper for uploads abandoned >6h. Migration `0011`. **Restic now covers Docker named volumes** by name pattern (`backup_docker_volumes`), verified by a real backup run.
 - [x] **P6 — group chats over MLS (ADR-0027)** — create a group, add/remove members, leave. Each add relays a **Welcome** to the newcomer and a **commit** to everyone already in; each remove sends a **Remove commit** that rotates the group secrets *before* the roster changes, so access is revoked cryptographically and not just at the transport. Commits ride the ordinary message stream, so they arrive in `seq` order. One owner (creator) may add/remove and cannot leave; enforced in the repo, not the route. `ConversationSummary` gains `kind`/`title`/`createdBy`; new `conversation` frame tells members to refetch. Web: group tab in New chat, group header + roster panel, group rows in the list. Directory lookup moved behind `ChatRepo` so handle-resolving routes are testable. Migration `0012`.
+- [x] **Contacts + presence on subscribe (ADR-0030)** — one-sided saved contacts with an optional private nickname (`chat_contacts`, `/api/chat/contacts`, migration `0013`): ☆ save from a DM header, a Contacts section in the sidebar (add by email/@username, open chat, rename, remove), nicknames shown in the chat list and thread header. The gateway answers `sub` with the other members' current presence, so peers who were online before you connected no longer show as offline.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Meta/Discord importers.

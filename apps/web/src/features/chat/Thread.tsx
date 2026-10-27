@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { attachmentUrl, formatBytes, isRenderableImage, type AttachmentRef } from '../../lib/attachments';
 import { chatClient, type ChatState, type UiMessage } from '../../lib/chatClient';
 import type { ReplyRef } from '../../lib/chatPayload';
+import { contactLabel, contactsStore, handleFor, useContacts } from '../../lib/contacts';
 import { conversationLabel, peerLabel } from '../../lib/displayPref';
 import { loadVerification, type VerificationStatus } from '../../lib/keyVerification';
 import { Avatar } from './Avatar';
@@ -29,7 +30,26 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
   const [verifying, setVerifying] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<VerificationStatus>('unverified');
   const [showGroup, setShowGroup] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
   const isGroup = conversation.kind === 'group';
+  const { contacts } = useContacts();
+  const saved = !!peer && contacts.some((c) => c.id === peer.id);
+
+  const toggleContact = async (): Promise<void> => {
+    if (!peer) return;
+    setSavingContact(true);
+    try {
+      if (saved) {
+        if (window.confirm(`Remove ${contactLabel(peer, contacts)} from your contacts? This chat stays.`)) await contactsStore.remove(peer.id);
+      } else {
+        await contactsStore.save(handleFor(peer));
+      }
+    } catch {
+      /* the contacts section shows load errors; a failed toggle just leaves the star as it was */
+    } finally {
+      setSavingContact(false);
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -98,7 +118,9 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
           <Avatar image={peer?.image} label={peer ? peerLabel(peer) : '?'} size={36} />
         )}
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-zinc-100">{conversationLabel({ ...conversation, peers: peer ? [peer] : conversation.peers })}</p>
+          <p className="truncate text-sm font-medium text-zinc-100">
+            {!isGroup && peer ? contactLabel(peer, contacts) : conversationLabel({ ...conversation, peers: peer ? [peer] : conversation.peers })}
+          </p>
           <p className="truncate text-xs text-zinc-500">
             {isGroup
               ? `${conversation.peers.length + 1} members`
@@ -120,8 +142,19 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
             👥 members
           </button>
         ) : (
+          <>
           <button
             className={`ml-auto whitespace-nowrap rounded-full border px-2 py-1 text-xs transition ${
+              saved ? 'border-sky-700/60 text-sky-300 hover:border-sky-500' : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
+            }`}
+            disabled={savingContact || !peer}
+            onClick={() => void toggleContact()}
+            title={saved ? 'Saved to your contacts — click to remove' : 'Save to your contacts (they are not notified)'}
+          >
+            {saved ? '★ saved' : '☆ save contact'}
+          </button>
+          <button
+            className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs transition ${
               verifyStatus === 'verified'
                 ? 'border-emerald-700/60 text-emerald-400 hover:border-emerald-500'
                 : verifyStatus === 'changed'
@@ -133,6 +166,7 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
           >
             {verifyStatus === 'verified' ? '✓ verified' : verifyStatus === 'changed' ? '⚠ key changed' : '🔒 verify keys'}
           </button>
+          </>
         )}
       </header>
 
