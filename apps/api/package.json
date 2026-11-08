@@ -20,7 +20,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1119.0",
     "@chatforge/types": "*",
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
     "@logto/node": "^3.0.0",
     "@robyrew/chat-converter": "github:RobyRew/chat-converter#v0.1.1",
