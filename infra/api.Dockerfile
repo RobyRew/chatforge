@@ -9,6 +9,10 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 RUN npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
+# git: npm installs @robyrew/chat-converter from a git tag (github:RobyRew/chat-converter#vX.Y.Z). With the
+# lockfile's commit it downloads GitHub's tarball; git is there for when npm clones instead.
+# Build stage only; the runtime image below does not carry it.
+RUN apk add --no-cache git
 COPY package.json package-lock.json tsconfig.base.json .npmrc ./
 COPY packages ./packages
 COPY apps ./apps

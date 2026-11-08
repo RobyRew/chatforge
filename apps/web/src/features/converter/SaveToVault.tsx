@@ -5,8 +5,18 @@ import { useMe } from '../../lib/useMe';
 import { resolveSaveMode, saveConversationToVault } from '../../lib/vault';
 import type { VaultMode } from '../../lib/vaultCrypto';
 
-/** Save the (edited) conversation to the user's encrypted Vault. Only shown when signed in. */
-export function SaveToVault({ conversation }: { conversation: Conversation }): ReactNode {
+/**
+ * Save the conversation open in the converter to the user's encrypted Vault. Only shown when signed in.
+ * `getConversation` is read on click (applying the edits to a large export is not free); `revision`
+ * changes whenever the converter opens or edits a conversation, which clears a previous "saved".
+ */
+export function SaveToVault({
+  getConversation,
+  revision,
+}: {
+  getConversation: () => Conversation | undefined;
+  revision: number;
+}): ReactNode {
   const { me } = useMe();
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string>();
@@ -23,9 +33,16 @@ export function SaveToVault({ conversation }: { conversation: Conversation }): R
       .catch(() => undefined);
   }, [me]);
 
+  useEffect(() => {
+    setState('idle');
+    setError(undefined);
+  }, [revision]);
+
   if (!me) return null;
 
   const save = async (): Promise<void> => {
+    const conversation = getConversation();
+    if (!conversation) return;
     setState('saving');
     setError(undefined);
     try {
@@ -49,6 +66,7 @@ export function SaveToVault({ conversation }: { conversation: Conversation }): R
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => void save()}
           disabled={state === 'saving'}
           className="rounded-xl border border-zinc-700 px-4 py-2.5 font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"

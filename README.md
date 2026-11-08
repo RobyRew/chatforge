@@ -8,12 +8,13 @@ This is a greenfield rewrite of the old `chat-converter` (vanilla JS, WhatsApp�
 See [`agents.md`](./agents.md) for the architecture decision log — the source of truth.
 
 ## What works today (v1)
-- **Conversion engine** (`@chatforge/core`): plugin registry + lossless canonical model.
-  - Importers: **WhatsApp** (`.txt`), **Telegram** (JSON). _(Meta/Discord/Signal stubbed.)_
-  - Exporters: **Telegram JSON**, **WhatsApp txt**, **HTML viewer**, **Markdown**, **canonical JSON**.
+- **Converter** from [`@robyrew/chat-converter`](https://github.com/RobyRew/chat-converter) (ADR-0031):
+  - Reads Telegram Desktop (HTML/JSON), WhatsApp, Instagram, Messenger, Snapchat, VSCO and Hinge exports.
+  - Writes the zip Telegram imports, WhatsApp's export layout, **UniversalChat**, HTML, Markdown, JSON.
   - Every conversion produces a **fidelity report** (preserved / approximated / dropped).
   - Runs the **same engine** in the browser (Web Worker) and in Node (server sandbox).
-- **Web SPA** (`@chatforge/web`): drag-drop converter, auto-detect, preview report, download — 100% client-side.
+- **Web SPA** (`@chatforge/web`): the converter page hosts `<chat-converter-app>` (folders, zips or files; an
+  inbox for multi-chat exports; edit, preview and convert on the device) plus **Save to Vault**; chat, settings, admin.
 - **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery,
   and **real MLS (RFC 9420)** via `ts-mls` behind a bytes-only, swappable provider.
 - **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
@@ -36,16 +37,16 @@ Full docs live in **[`docs/`](docs/)** — start at [docs/README.md](docs/README
 | [infra/dokploy/DEPLOY.md](infra/dokploy/DEPLOY.md) | Deploying to the VPS |
 | [agents.md](agents.md) | Decision log (ADRs) — *why* each choice was made |
 
-The unit suite contains 103 tests (core 25 · api 63 · crypto 15). The real S3 contract test requires
+The unit suite contains 87 tests (api 72 · crypto 15); the converter's tests live in chat-converter. The real S3 contract test requires
 an explicit disposable endpoint and is run by the image workflow; it is skipped in ordinary unit runs.
 
 ## Not yet (next iteration)
 MLS safety-number key verification · Spotify “now playing” status · api-client codegen from OpenAPI ·
-Meta/Discord/Signal importers · attachment garbage collection · native apps.
+Discord/Signal importers (in chat-converter) · attachment garbage collection · native apps.
 (Running status lives at the bottom of [`agents.md`](./agents.md).)
 
 ## Layout
-`packages/{types,core,crypto}` · `apps/{web,api}` · `infra/` · `docs/`
+`packages/{types,crypto}` · `apps/{web,api}` · `infra/` · `docs/`
 (full map in [`agents.md`](./agents.md)).
 
 ## Quickstart

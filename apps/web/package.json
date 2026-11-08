@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "ChatForge web SPA — client-side converter UI.",
+  "description": "ChatForge web SPA: the converter (<chat-converter-app>), chat and admin UI.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,13 +13,12 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
-    "@chatforge/core": "*",
     "@chatforge/crypto": "*",
     "@chatforge/types": "*",
+    "@robyrew/chat-converter": "github:RobyRew/chat-converter#v0.1.1",
     "@tanstack/react-router": "^1.170.10",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zustand": "^5.0.3"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

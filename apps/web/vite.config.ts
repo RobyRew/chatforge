@@ -11,15 +11,15 @@ export default defineConfig({
     // Resolve workspace packages to their TS source (no build step needed in dev).
     // More-specific subpaths must come first.
     alias: [
-      { find: '@chatforge/core/worker', replacement: r('../../packages/core/src/worker.ts') },
-      { find: '@chatforge/core/transforms', replacement: r('../../packages/core/src/transforms.ts') },
-      { find: '@chatforge/core/richtext', replacement: r('../../packages/core/src/richtext.ts') },
-      { find: '@chatforge/core', replacement: r('../../packages/core/src/index.ts') },
       // MLS provider for the chat worker (libsodium-free subpath — no sodium alias needed).
       { find: '@chatforge/crypto/mls', replacement: r('../../packages/crypto/src/mls.ts') },
       { find: '@chatforge/types', replacement: r('../../packages/types/src/index.ts') },
     ],
   },
+  // @robyrew/chat-converter ships TypeScript source and starts its worker with
+  // `new Worker(new URL('../worker/worker.ts', import.meta.url))`. Pre-bundling would move the module
+  // and break that relative URL, so it is served as-is (its dependencies are all ESM).
+  optimizeDeps: { exclude: ['@robyrew/chat-converter'] },
   worker: { format: 'es' },
   server: {
     port: 4321,

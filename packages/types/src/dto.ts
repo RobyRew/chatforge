@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { ExportFormatIdSchema, PlatformIdSchema } from './platforms';
-import { FidelityReportSchema } from './report';
+import { ExportFormatIdSchema, FidelityReportSchema, PlatformIdSchema } from '@robyrew/chat-converter/model';
 
 /**
  * Metadata for a saved conversion. Contains **no plaintext** — the actual converted

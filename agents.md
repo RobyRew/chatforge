@@ -23,8 +23,9 @@ access-control panel, real-time E2E chat, and native apps. Greenfield rewrite of
    dropping in one file. Each backend module is independently editable/removable.
 4. **API-first** — web is a pure SPA against a typed API; native apps (later) reuse the same
    API + OpenAPI spec + canonical schema.
-5. **Isomorphic core** — `@chatforge/core` runs unchanged in the browser (Web Worker) and in
-   Node (server sandbox). No DOM/Node-only assumptions in core.
+5. **Isomorphic core** — the conversion engine runs unchanged in the browser (Web Worker) and in
+   Node (server sandbox). No DOM/Node-only assumptions in core. Since ADR-0031 the engine is
+   `@robyrew/chat-converter` (RobyRew/chat-converter), installed by git tag.
 
 ## Repository layout
 ```
@@ -34,8 +35,7 @@ chatforge/
 ├── package.json              # npm workspaces root + turbo scripts
 ├── turbo.json · tsconfig.base.json
 ├── packages/
-│   ├── types/    @chatforge/types    — canonical model + DTOs (zod), enums, reports, wire protocol
-│   ├── core/     @chatforge/core     — engine: contracts, registry, pipeline, importers, exporters
+│   ├── types/    @chatforge/types    — DTOs (zod), wire protocol; re-exports the chat model from @robyrew/chat-converter (ADR-0031)
 │   └── crypto/   @chatforge/crypto   — client E2E: vault sealing + the MLS provider (ADR-0020)
 │   (api-client / ui / config were planned in M0 and never needed — don't look for them)
 ├── apps/
@@ -476,6 +476,43 @@ client until they changed state. The existing gateway test waited for a change, 
   conversation peers; contacts do not widen it.
 **Status:** Accepted.
 
+## ADR-0031 — The converter comes from @robyrew/chat-converter (2026-11-07) · Accepted
+
+**Context:** The 2026-09-04 decision was to make the converter usable on its own without copying code.
+The engine moved to its own repository, [RobyRew/chat-converter](https://github.com/RobyRew/chat-converter)
+(bootstrapped from this repo at `d2e3b2d`), which has since gained Telegram HTML, Instagram, Messenger,
+Snapchat, VSCO and Hinge importers, the zip Telegram's importer accepts, UniversalChat, and the converter UI
+as a framework-free custom element. ChatForge still carried its own copy in `packages/core` and the model
+files in `packages/types`. ADRs 0009, 0012, 0015, 0016 and 0017 continue in chat-converter's `agents.md`
+(there, zip.js replaced fflate).
+**Decision:**
+- `@chatforge/types`, `@chatforge/web` and `@chatforge/api` depend on `github:RobyRew/chat-converter#vX.Y.Z`,
+  the git-tag pattern of `@robyrew/ui` and `@robyrew/web-config`. `packages/core` and
+  `packages/types/src/{canonical,capabilities,platforms,report}.ts` are deleted; `@chatforge/types`
+  re-exports `@robyrew/chat-converter/model`, so code importing the model from `@chatforge/types` is unchanged.
+- The converter page hosts `<chat-converter-app>`, the element chat-converter.robyrew.com serves. The React
+  converter (Dropzone, DetailsEditor, ChatPreview, ReportView, store, workerClient, convert.worker) is
+  removed; `RichText` moved to `features/chat` for the Vault view. **Save to Vault stays ChatForge's**: a
+  React portal renders it into a node the element takes as its `slot="actions"` child, and it reads
+  `getConversation()` on click. The element is created in an effect rather than as JSX because it moves
+  that child into its own DOM, which React must not manage.
+- The API's opt-in server-side conversion calls the same package (`convert`).
+- Vite serves the package unbundled (`optimizeDeps.exclude`): it starts its worker with
+  `new URL('../worker/worker.ts', import.meta.url)`, which dependency pre-bundling would break. The
+  production build emits that worker as its own asset.
+- The Docker build stages install `git` for the `github:` dependency; the runtime images are unchanged.
+- `.github/workflows/bump-chat-converter.yml` (daily, and on demand) moves the three pins to the newest
+  `vX.Y.Z` tag, re-locks (with `npm dedupe`: after a git spec changes npm installs one copy per workspace),
+  runs the checks of `build-images.yml`, commits to `main` and dispatches `build-images.yml`, since a push
+  made with `GITHUB_TOKEN` starts no workflow. Deploying stays manual (ADR-0028).
+**Consequences:** The converter's tests live in chat-converter (`packages/core`'s 25 left this repo).
+ChatForge type-checks the package's TypeScript source with its own compiler settings: the first switch
+failed in `@chatforge/types` (lib ES2023 only) on `structuredClone` in the model, which chat-converter
+0.1.1 removed while adding a model-only type check. Vault items saved before the switch keep the message
+fields the Vault view reads (`id`, `senderId`, `ts`, `content`). Storing UniversalChat in the Vault is
+left for later.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -530,4 +567,5 @@ against (2026-06-01):
 - [x] **P5 — message deletion, attachment GC, backup gap closed (ADR-0026)** — delete for everyone (sender-only, enforced in the WHERE clause) blanks the ciphertext but keeps the row so `seq` references stay valid; clients purge their local plaintext cache and render a tombstone, plus a local-only **Remove for me**. Attachments are linked to their message via `blobIds` on the send frame (the server can't read the payload, so it can't infer the link) and are reclaimed on delete, with an hourly sweeper for uploads abandoned >6h. Migration `0011`. **Restic now covers Docker named volumes** by name pattern (`backup_docker_volumes`), verified by a real backup run.
 - [x] **P6 — group chats over MLS (ADR-0027)** — create a group, add/remove members, leave. Each add relays a **Welcome** to the newcomer and a **commit** to everyone already in; each remove sends a **Remove commit** that rotates the group secrets *before* the roster changes, so access is revoked cryptographically and not just at the transport. Commits ride the ordinary message stream, so they arrive in `seq` order. One owner (creator) may add/remove and cannot leave; enforced in the repo, not the route. `ConversationSummary` gains `kind`/`title`/`createdBy`; new `conversation` frame tells members to refetch. Web: group tab in New chat, group header + roster panel, group rows in the list. Directory lookup moved behind `ChatRepo` so handle-resolving routes are testable. Migration `0012`.
 - [x] **Contacts + presence on subscribe (ADR-0030)** — one-sided saved contacts with an optional private nickname (`chat_contacts`, `/api/chat/contacts`, migration `0013`): ☆ save from a DM header, a Contacts section in the sidebar (add by email/@username, open chat, rename, remove), nicknames shown in the chat list and thread header. The gateway answers `sub` with the other members' current presence, so peers who were online before you connected no longer show as offline.
-- [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Meta/Discord importers.
+- [x] **Converter from @robyrew/chat-converter (ADR-0031)** — `packages/core` and the model files removed; `@chatforge/{types,web,api}` pin `github:RobyRew/chat-converter#v0.1.1`; the converter page hosts `<chat-converter-app>` with Save to Vault in its actions slot; Docker build stages install git; daily `bump-chat-converter.yml` moves the pin and dispatches the image build.
+- [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).

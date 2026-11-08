@@ -3,7 +3,7 @@ import type { Conversation, ConversationSummary } from '@chatforge/types';
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
 import { envelopeMode, isVaultUnlocked, vaultDecrypt } from '../../lib/vaultCrypto';
-import { RichText } from '../converter/RichText';
+import { RichText } from './RichText';
 
 /** Read-only view of a decrypted saved chat, with the ability to link it to a live DM. */
 export function VaultView({ id, conversations, onChanged }: { id: string; conversations: ConversationSummary[]; onChanged: () => void }): ReactNode {

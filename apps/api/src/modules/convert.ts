@@ -1,12 +1,12 @@
-import { convert, type ConvertOptions } from '@chatforge/core';
+import { convert, type ConvertOptions } from '@robyrew/chat-converter';
 import type { ExportFormatId, PlatformId } from '@chatforge/types';
 import { Hono } from 'hono';
 import { requirePermission, type Vars } from '../middleware';
 import { stores } from '../stores';
 
 /**
- * Opt-in server-side conversion (ADR-0001 hybrid, ADR-0011). Runs the SAME isomorphic core
- * engine in Node. The sandbox is ephemeral: plaintext is decoded in memory, converted, zeroized
+ * Opt-in server-side conversion (ADR-0001 hybrid, ADR-0011). Runs the same engine the browser
+ * uses (@robyrew/chat-converter, ADR-0031) in Node. The sandbox is ephemeral: plaintext is decoded in memory, converted, zeroized
  * immediately, never written to disk, and never logged — only metadata enters the audit log.
  */
 export const convertModule = new Hono<Vars>();

@@ -20,7 +20,6 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "test:core": "npm run test --workspace @chatforge/core",
     "dev:web": "npm run dev --workspace @chatforge/web"
   },
   "devDependencies": {

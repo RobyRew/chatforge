@@ -7,8 +7,7 @@ chatforge/
 ├── agents.md                  decision log (ADRs) — read this for *why*
 ├── docs/                      this documentation — *what exists now*
 ├── packages/
-│   ├── types/    @chatforge/types    canonical model + DTOs (zod), wire protocol
-│   ├── core/     @chatforge/core     conversion engine: importers, exporters, transforms
+│   ├── types/    @chatforge/types    chat model (re-exported from @robyrew/chat-converter) + DTOs (zod), wire protocol
 │   └── crypto/   @chatforge/crypto   vault sealing (libsodium) + MLS provider (ts-mls)
 ├── apps/
 │   ├── api/      @chatforge/api      Hono + zod-openapi + Drizzle/Postgres + ws
@@ -18,6 +17,12 @@ chatforge/
 
 Internal packages export **raw TypeScript** (`exports → ./src/index.ts`) — no build step for dev or
 test; the apps bundle them. npm workspaces + Turborepo (`npx turbo run test typecheck build`).
+
+The conversion engine, the chat model and the converter UI (`<chat-converter-app>`) are not in this
+repository: they come from [RobyRew/chat-converter](https://github.com/RobyRew/chat-converter)
+(`@robyrew/chat-converter`, raw TypeScript as well), installed by git tag. The converter page adds Save to
+Vault to the element; the API's server-side sandbox calls the same `convert`.
+`.github/workflows/bump-chat-converter.yml` moves the pin when a new tag appears (ADR-0031).
 
 ## Runtime topology
 

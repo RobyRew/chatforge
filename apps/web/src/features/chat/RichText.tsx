@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { segmentRichText } from '@chatforge/core/richtext';
+import { segmentRichText } from '@robyrew/chat-converter/richtext';
 import type { RichText as RichTextValue } from '@chatforge/types';
 
 /** Renders canonical rich-text entities to React (reuses the engine's segmentation). */
