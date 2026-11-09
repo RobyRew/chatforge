@@ -545,6 +545,52 @@ JavaScript API gets its own `typescript-6` alias (`npm:typescript@^6.0.3`), the 
 ADR-0011 runs Astro's checker.
 **Status:** Accepted.
 
+## ADR-0033 — The web app in chat-converter's design language (2026-11-09) · Accepted
+
+**Context:** The owner asked for a complete redesign of ChatForge in the design language of chat-converter: its
+app frame (chat-converter ADR-0010: a top bar over panes laid out by container queries, opaque menus that become
+bottom sheets on phones, SVG icons) on the house design system, `@robyrew/ui` through `@robyrew/web-config`
+(Obsidian tokens, glass only for the floating layer, the Apple control set). The web app used hard-coded Tailwind
+zinc/sky classes, emoji icons and fixed-position overlays, and hosted `<chat-converter-app>` at v0.1.1, from before
+the converter's own redesign.
+**Decision:**
+- `@chatforge/web` depends on `@robyrew/web-config` (git tag v0.2.0), as bibletype and powerpoint-extractor do, and
+  `styles.css` imports its `theme.css` (the ui tokens and controls in the components layer, republished as Tailwind
+  theme names). npm installs Astro 7 as that package's peer, as a dev dependency; the web image builds with Vite.
+- The chat-converter pin is v0.3.0, the release with its app-frame UI. The element reads the house tokens, so the
+  converter page and the rest of ChatForge share one palette. Icons come from `@robyrew/chat-converter/ui/icons`;
+  `src/ui/Icon.tsx` adds ChatForge-only paths drawn on the same grid.
+- Shared pieces in `src/ui/`: `Sheet` (a modal `<dialog>`: a popover at an anchor or pointer, a centred panel, a
+  bottom sheet below 640 px) with `Menu`; `Segmented` (`.rw-seg`), `Switch` (`.rw-switch`), `IconButton`,
+  `PageHead`, `Notice`, `Banner`, `Loading`; and `kit.tsx`, formerly `features/admin/ui.tsx` (class names for the
+  house controls, `Card`, `ErrorText`, `useAction`).
+- Shell: a sticky glass header (brand, the sections the account can open, Auto · Light · Dark, the account menu; a
+  menu button below 760 px, avatar-only account between 760 and 1023 px) that measures itself into `--site-head`,
+  and a footer. The converter page follows chat-converter's site: a hero over the element's start screen, hidden
+  once an export is open, when the element's frame fills the screen. Save to Vault is a section in the element's
+  export pane.
+- Chat is an app frame: a list pane (Chats · Contacts · Vault) beside the open conversation; container queries on the
+  frame's width show one pane at a time below 760 px, with a back button. Conversations get day separators, bubbles
+  grouped within five minutes, sender names in groups, a ⋯ button that opens the message menu (beside right-click
+  and long-press), a composer that grows with its text, and a drop veil. List rows show the last message and its
+  time; a custom status moves to an emoji beside the name. New chat, group members, key verification, the message
+  menu and the account menu are sheets. Opening another conversation clears a pending reply.
+- Settings, Admin, Dashboard and Account use page heads, `.rw-card` cards, segmented controls and switches.
+- Theme: the house bootstrap (`@robyrew/web-config/theme-bootstrap`) stamps `data-theme` before the first paint. The
+  package's README inlines it; ChatForge's CSP (`script-src 'self'`) refuses inline scripts, so `vite.config.ts`
+  serves the same string as `assets/theme-bootstrap-<hash>.js`, loaded first in `<head>`. The element turns light
+  under `data-theme="light"`, so it follows the switch.
+- Dark theme without a blue cast (owner's call, 2026-11-09): ChatForge declares neutral greys for the house surface,
+  ink, hairline and glass tokens, and neutral fills for selection, own bubbles and the page glow; the accent stays
+  for buttons, links, focus rings and switches. The light theme is the house light palette.
+- The element's stylesheet is unlayered, so ChatForge's overrides of it (`--cc-app-h`, the edge-to-edge phone frame,
+  `--cc-mine` in the dark theme, the Save to Vault button's font) are unlayered too and out-specify its rules.
+**Consequences:** The chat client, the API and the crypto are unchanged. The house dark palette in `@robyrew/ui`,
+and so on chat-converter.robyrew.com, is still the blue-tinted Obsidian; ChatForge's neutral dark lives in its own
+`styles.css`. `--cc-mine` is internal to the element, so a rename there would bring back accent-tinted own bubbles
+in the converter preview.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -601,4 +647,5 @@ against (2026-06-01):
 - [x] **Contacts + presence on subscribe (ADR-0030)** — one-sided saved contacts with an optional private nickname (`chat_contacts`, `/api/chat/contacts`, migration `0013`): ☆ save from a DM header, a Contacts section in the sidebar (add by email/@username, open chat, rename, remove), nicknames shown in the chat list and thread header. The gateway answers `sub` with the other members' current presence, so peers who were online before you connected no longer show as offline.
 - [x] **Converter from @robyrew/chat-converter (ADR-0031)** — `packages/core` and the model files removed; `@chatforge/{types,web,api}` pin `github:RobyRew/chat-converter#v0.1.1`; the converter page hosts `<chat-converter-app>` with Save to Vault in its actions slot; Docker build stages install git; daily `bump-chat-converter.yml` moves the pin and dispatches the image build.
 - [x] **Node 26 + TypeScript 7 (ADR-0032)** — workflows, Dockerfiles, `.nvmrc`, `engines` and the esbuild target on Node 26; `typescript` ^7.0.2 and `@types/node` ^26.6.6; `outDir` removed from the API's no-emit tsconfig.
+- [x] **Redesign in chat-converter's design language (ADR-0033)** — `@robyrew/web-config` theme, chat-converter v0.3.0 and its icons; `src/ui/` (sheets, menus, segmented controls, cards); glass header with Auto · Light · Dark; chat as a container-query app frame; neutral dark theme; theme bootstrap served as a file under the CSP.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).

@@ -15,6 +15,8 @@ See [`agents.md`](./agents.md) for the architecture decision log — the source 
   - Runs the **same engine** in the browser (Web Worker) and in Node (server sandbox).
 - **Web SPA** (`@chatforge/web`): the converter page hosts `<chat-converter-app>` (folders, zips or files; an
   inbox for multi-chat exports; edit, preview and convert on the device) plus **Save to Vault**; chat, settings, admin.
+  Built on the house design system (`@robyrew/ui` via `@robyrew/web-config`) in chat-converter's app-frame layout,
+  with Auto / Light / Dark themes (ADR-0033).
 - **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery,
   and **real MLS (RFC 9420)** via `ts-mls` behind a bytes-only, swappable provider.
 - **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in

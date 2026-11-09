@@ -618,6 +618,22 @@ body {
       display: none !important;
     }
   }
+  /* Up to five links, the theme switch and the account button share the bar: between the phone menu and a wide
+     window the account shows only its avatar and the links tighten, so nothing is pushed past the edge. */
+  @media (min-width: 760px) and (max-width: 1023px) {
+    .cf-account__name {
+      display: none;
+    }
+    .cf-account {
+      padding-right: 0.45rem;
+    }
+    .cf-links {
+      margin-left: 0.4rem;
+    }
+    .cf-link {
+      padding-inline: 0.62rem;
+    }
+  }
 
   /* ============================================================ page layout */
 

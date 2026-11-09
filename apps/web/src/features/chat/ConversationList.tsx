@@ -81,7 +81,8 @@ export function ConversationList({
               <span className="cf-row__main">
                 <span className="cf-row__top">
                   <span className="cf-row__title">{label}</span>
-                  {!isGroup && peer?.statusEmoji && (
+                  {/* The emoji beside the name only when the line below shows a message, not the status itself. */}
+                  {!isGroup && peer?.statusEmoji && (last || typing) && (
                     <span className="cf-row__emoji" title={peer.statusText ?? undefined}>
                       {peer.statusEmoji}
                     </span>
