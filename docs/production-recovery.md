@@ -22,7 +22,7 @@ type headers present; a logical dump written; a Restic snapshot taken with the G
 snapshot hook. Still open: rotating `LOGTO_APP_SECRET` in the Logto console (see step 2) and the
 isolated restore drill (step 9).
 
-`Build and test production images` installs the lockfile with Node 22 / npm 11.19.1, rejects npm
+`Build and test production images` installs the lockfile with Node 26 / npm 11.19.1, rejects npm
 advisories at moderate or above, runs uncached tests/typechecks/build, builds off-host, and rejects
 HIGH/CRITICAL runtime findings (including unfixed ones) and detected secrets. Runtime tests use
 disposable data: PostgreSQL initialization/migrations/restart, real AWS SDK S3 operations,

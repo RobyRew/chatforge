@@ -6,7 +6,7 @@
 # library carried 22 HIGH/CRITICAL CVEs in the 2026-09-16 image scan. The build
 # stage now bundles the API into two self-contained files and the runtime stage
 # carries no node_modules at all: nothing to scan, nothing to exploit.
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 RUN npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
 # git: npm installs @robyrew/chat-converter from a git tag (github:RobyRew/chat-converter#vX.Y.Z). With the
@@ -20,7 +20,7 @@ COPY apps ./apps
 RUN npm ci --include=dev --ignore-scripts --no-audit --no-fund \
  && npm run build --workspace @chatforge/api
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 RUN apk upgrade --no-cache \
  # npm is not used at runtime; dropping it also drops its own dependency tree from the scan.

@@ -1,5 +1,5 @@
 # Multi-stage build for the Vite SPA. Build context = repo root (needs workspace packages).
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 RUN npm install --global npm@11.19.1 --ignore-scripts --no-audit --no-fund
 # git: npm installs @robyrew/chat-converter from a git tag (github:RobyRew/chat-converter#vX.Y.Z). With the

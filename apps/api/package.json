@@ -13,7 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "clean": "rm -rf dist .turbo coverage",
-    "build": "esbuild src/server.ts src/migrate.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --out-extension:.js=.mjs --sourcemap --log-level=warning --external:pg-native --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __chatforgeCreateRequire } from 'node:module'; const require = __chatforgeCreateRequire(import.meta.url);\"",
+    "build": "esbuild src/server.ts src/migrate.ts --bundle --platform=node --target=node26 --format=esm --outdir=dist --out-extension:.js=.mjs --sourcemap --log-level=warning --external:pg-native --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __chatforgeCreateRequire } from 'node:module'; const require = __chatforgeCreateRequire(import.meta.url);\"",
     "start:prod": "node dist/server.mjs",
     "db:migrate:prod": "node dist/migrate.mjs"
   },
@@ -32,13 +32,13 @@
   },
   "devDependencies": {
     "@chatforge/crypto": "*",
-    "@types/node": "^22.10.7",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.11.10",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.25.4",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.12"
   }
 }

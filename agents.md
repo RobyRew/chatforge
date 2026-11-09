@@ -69,6 +69,7 @@ React/Zustand habits; leanest option. (Alternatives weighed: Next.js, SvelteKit,
 
 ## ADR-0003 — Backend: Node 22 + Hono (2026-06-01) · Accepted
 Ultra-light, fast, Dokploy-friendly, TS — enables sharing core/crypto/types with web + native.
+**Amended 2026-11-09 (ADR-0032):** Node 26.
 
 ## ADR-0004 — Monorepo: npm workspaces + Turborepo (2026-06-01) · Accepted
 **Amended from plan:** plan proposed pnpm; pnpm/corepack are **not installed** on the machine
@@ -513,6 +514,37 @@ fields the Vault view reads (`id`, `senderId`, `ts`, `content`). Storing Univers
 left for later.
 **Status:** Accepted.
 
+## ADR-0032 — Node 26 and TypeScript 7 (2026-11-09) · Accepted
+
+**Amends** the Node 22 of ADR-0003.
+**Context:** The owner set the rule on 2026-11-09: the newest Node LTS and TypeScript 7 from now on, and new
+releases adopted as they ship. Node 26 has been the newest LTS since 2026-10-28; TypeScript 7.0.2, the Go
+compiler, is the newest stable release. `@robyrew/chat-converter` 0.3.0 requires Node ≥26 (its ADR-0011).
+ChatForge installs with `engine-strict=false`, so npm only warned about that, and the daily bump (ADR-0031)
+ran its checks on Node 22.
+**Decision:**
+- Node 26 in both workflows (`actions/setup-node`), in the API's build and runtime stages and the web build
+  stage (`node:26-alpine`), in `.nvmrc` and as `engines.node` (`>=26`). The API bundle targets `node26`
+  (esbuild `--target`). `@types/node` is `^26.6.6` in the root and in `@chatforge/api`.
+- `typescript` is `^7.0.2` in the root and all four workspaces; `lint` and `typecheck` stay `tsc --noEmit`.
+  The compiler is one npm package plus a platform package per OS and CPU (`@typescript/typescript-linux-x64`
+  on the CI runner) and has no install script, so `npm ci --ignore-scripts` installs it. No image runs `tsc`:
+  the web image builds with Vite, the API with esbuild.
+- No `typescript-6` alias. TypeScript 7's main export is only `version`/`versionMajorMinor`; its new API sits
+  under `typescript/unstable/*`. Nothing in ChatForge's build or tests loads TypeScript's JavaScript API:
+  Vite, esbuild, tsx, drizzle-kit, `@vitejs/plugin-react` (Babel) and Tailwind (jiti) strip types themselves,
+  and Vitest needs `typescript` only for its typecheck mode, which ChatForge does not use. chat-converter
+  needed the alias for Astro's checker alone.
+- `apps/api/tsconfig.json` drops `outDir`. The API is type-checked with `noEmit` and bundled by esbuild, so
+  the option did not affect any output. TypeScript 7 takes the tsconfig's own directory as the default
+  `rootDir`, and with `outDir` set it rejected the `paths` targets in `packages/` (TS6059, four errors).
+  None of the options TypeScript 7 removed (`baseUrl`, `moduleResolution: node10`, `target: ES5`, …) appear
+  in the tsconfigs.
+**Consequences:** Contributors and the image builds need Node 26. A tool added later that drives TypeScript's
+JavaScript API gets its own `typescript-6` alias (`npm:typescript@^6.0.3`), the way chat-converter's
+ADR-0011 runs Astro's checker.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -568,4 +600,5 @@ against (2026-06-01):
 - [x] **P6 — group chats over MLS (ADR-0027)** — create a group, add/remove members, leave. Each add relays a **Welcome** to the newcomer and a **commit** to everyone already in; each remove sends a **Remove commit** that rotates the group secrets *before* the roster changes, so access is revoked cryptographically and not just at the transport. Commits ride the ordinary message stream, so they arrive in `seq` order. One owner (creator) may add/remove and cannot leave; enforced in the repo, not the route. `ConversationSummary` gains `kind`/`title`/`createdBy`; new `conversation` frame tells members to refetch. Web: group tab in New chat, group header + roster panel, group rows in the list. Directory lookup moved behind `ChatRepo` so handle-resolving routes are testable. Migration `0012`.
 - [x] **Contacts + presence on subscribe (ADR-0030)** — one-sided saved contacts with an optional private nickname (`chat_contacts`, `/api/chat/contacts`, migration `0013`): ☆ save from a DM header, a Contacts section in the sidebar (add by email/@username, open chat, rename, remove), nicknames shown in the chat list and thread header. The gateway answers `sub` with the other members' current presence, so peers who were online before you connected no longer show as offline.
 - [x] **Converter from @robyrew/chat-converter (ADR-0031)** — `packages/core` and the model files removed; `@chatforge/{types,web,api}` pin `github:RobyRew/chat-converter#v0.1.1`; the converter page hosts `<chat-converter-app>` with Save to Vault in its actions slot; Docker build stages install git; daily `bump-chat-converter.yml` moves the pin and dispatches the image build.
+- [x] **Node 26 + TypeScript 7 (ADR-0032)** — workflows, Dockerfiles, `.nvmrc`, `engines` and the esbuild target on Node 26; `typescript` ^7.0.2 and `@types/node` ^26.6.6; `outDir` removed from the API's no-emit tsconfig.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).
