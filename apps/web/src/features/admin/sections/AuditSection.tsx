@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type AuditEntry } from '../../../lib/api';
-import { Card, ErrorText, ui, useAction } from '../ui';
+import { Icon } from '../../../ui/Icon';
+import { Card, ErrorText, ui, useAction } from '../../../ui/kit';
 
 export function AuditSection(): ReactNode {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -10,37 +11,45 @@ export function AuditSection(): ReactNode {
 
   return (
     <Card
+      icon="list"
       title="Audit log"
+      description="Every admin action, newest first."
+      flush
       actions={
-        <button className={`${ui.btn} ${ui.ghost}`} disabled={busy} onClick={load}>
+        <button type="button" className={`${ui.btn} ${ui.sm}`} disabled={busy} onClick={load}>
+          <Icon name="refresh" size={14} />
           Refresh
         </button>
       }
     >
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-zinc-500">
+      <div className="cf-table-wrap">
+        <table className="cf-table">
+          <thead>
             <tr>
-              <th className="py-1.5 pr-3 font-medium">When</th>
-              <th className="py-1.5 pr-3 font-medium">Action</th>
-              <th className="py-1.5 pr-3 font-medium">Actor</th>
-              <th className="py-1.5 font-medium">Detail</th>
+              <th>When</th>
+              <th>Action</th>
+              <th>Actor</th>
+              <th>Detail</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800 text-zinc-300">
+          <tbody>
             {entries.map((e) => (
               <tr key={e.id}>
-                <td className="whitespace-nowrap py-1.5 pr-3 text-zinc-500">{new Date(e.ts).toLocaleString()}</td>
-                <td className="py-1.5 pr-3 font-mono text-xs text-sky-300">{e.action}</td>
-                <td className="py-1.5 pr-3 font-mono text-xs text-zinc-500">{e.actorId ?? '—'}</td>
-                <td className="py-1.5 text-zinc-400">{e.detail ?? ''}</td>
+                <td className="cf-table__muted cf-nowrap">{new Date(e.ts).toLocaleString()}</td>
+                <td>
+                  <code className="cf-code cf-code--accent">{e.action}</code>
+                </td>
+                <td className="cf-table__muted cf-mono">{e.actorId ?? '—'}</td>
+                <td>{e.detail ?? ''}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!entries.length && <p className="py-2 text-sm text-zinc-500">No audit entries yet.</p>}
+        {!entries.length && <p className="cf-list-empty">No audit entries yet.</p>}
       </div>
-      <ErrorText>{error}</ErrorText>
+      <div className="cf-card__pad">
+        <ErrorText>{error}</ErrorText>
+      </div>
     </Card>
   );
 }

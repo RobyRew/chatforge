@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../../../lib/api';
-import { Card, ErrorText, ui, useAction } from '../ui';
+import { Switch } from '../../../ui/controls';
+import { Icon } from '../../../ui/Icon';
+import { Card, ErrorText, ui, useAction } from '../../../ui/kit';
 
 export function FlagsSection(): ReactNode {
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -13,32 +15,38 @@ export function FlagsSection(): ReactNode {
   const set = (flag: string, enabled: boolean): void => run(async () => void (await api.admin.setFlag(flag, enabled)), load);
 
   return (
-    <Card title="Feature flags">
-      <div className="flex flex-col divide-y divide-zinc-800">
+    <Card icon="zap" title="Feature flags" description="Switch features on or off for everyone." flush>
+      <ul className="cf-list">
         {Object.entries(flags).map(([flag, enabled]) => (
-          <label key={flag} className="flex cursor-pointer items-center justify-between py-2.5">
-            <span className="font-mono text-sm text-zinc-200">{flag}</span>
-            <input type="checkbox" className="h-4 w-4 accent-sky-500" checked={enabled} disabled={busy} onChange={(e) => set(flag, e.target.checked)} />
-          </label>
+          <li key={flag} className="cf-list__row">
+            <code className="cf-code">{flag}</code>
+            <Switch label={flag} checked={enabled} disabled={busy} onChange={(on) => set(flag, on)} />
+          </li>
         ))}
-        {!Object.keys(flags).length && <p className="py-2 text-sm text-zinc-500">No flags yet.</p>}
-      </div>
-      <div className="mt-3 flex gap-2">
-        <input
-          className={ui.field}
-          placeholder="new-flag-name"
-          value={newFlag}
-          onChange={(e) => setNewFlag(e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-        />
-        <button
-          className={`${ui.btn} ${ui.ghost} whitespace-nowrap`}
-          disabled={busy || !newFlag}
-          onClick={() => set(newFlag, false)}
+        {!Object.keys(flags).length && <li className="cf-list-empty">No flags yet.</li>}
+      </ul>
+      <div className="cf-card__pad">
+        <form
+          className="cf-inline-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newFlag) set(newFlag, false);
+          }}
         >
-          Add flag
-        </button>
+          <input
+            className={ui.field}
+            placeholder="new-flag-name"
+            aria-label="New flag name"
+            value={newFlag}
+            onChange={(e) => setNewFlag(e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+          />
+          <button type="submit" className={ui.btn} disabled={busy || !newFlag}>
+            <Icon name="plusCircle" size={15} />
+            Add flag
+          </button>
+        </form>
+        <ErrorText>{error}</ErrorText>
       </div>
-      <ErrorText>{error}</ErrorText>
     </Card>
   );
 }

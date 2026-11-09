@@ -1,40 +1,56 @@
-import { signIn, signOut, useSession } from '../../lib/authClient';
+import type { ReactNode } from 'react';
+import { ACCOUNT_URL, signIn, signOut, useSession } from '../../lib/authClient';
+import { Loading } from '../../ui/controls';
+import { Icon } from '../../ui/Icon';
+import { Avatar } from '../chat/Avatar';
 
-const btn = 'rounded-xl px-4 py-2 text-sm font-medium text-white transition disabled:opacity-40';
-// Logto's hosted account UI — where password, passkeys, social logins and 2FA are managed.
-const ACCOUNT_URL = 'https://auth.robyrew.com';
-
-export function AuthPanel() {
+export function AuthPanel(): ReactNode {
   const { data, isPending } = useSession();
 
-  if (isPending) return <p className="text-sm text-zinc-400">Loading…</p>;
+  if (isPending) return <Loading />;
 
   if (data) {
+    const label = data.user.name?.trim() || data.user.email;
     return (
-      <div className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <p className="text-sm text-zinc-300">
-          Signed in as <span className="font-medium text-zinc-100">{data.user.email}</span>
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <a className={`${btn} bg-zinc-700 hover:bg-zinc-600`} href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+      <section className="rw-card cf-auth">
+        <div className="cf-auth__who">
+          <Avatar label={label} size={52} />
+          <div>
+            <p className="cf-auth__name">{label}</p>
+            <p className="cf-auth__email">Signed in as {data.user.email}</p>
+          </div>
+        </div>
+        <div className="cf-actions-row">
+          <a className="rw-btn" href={ACCOUNT_URL} target="_blank" rel="noreferrer">
+            <Icon name="key" size={16} />
             Manage account
+            <Icon name="external" size={14} />
           </a>
-          <button className={`${btn} bg-zinc-700 hover:bg-zinc-600`} onClick={() => signOut()}>
+          <button type="button" className="rw-btn rw-btn--danger" onClick={() => signOut()}>
+            <Icon name="logOut" size={16} />
             Sign out
           </button>
         </div>
-        <p className="text-xs text-zinc-500">Password, passkeys, social logins and 2FA are managed in your account.</p>
-      </div>
+        <p className="cf-fineprint">Password, passkeys, social logins and 2FA are managed in your account.</p>
+      </section>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-      <p className="text-sm text-zinc-300">Sign in to save conversions and use end-to-end encrypted chat.</p>
-      <button className={`${btn} bg-emerald-600 hover:bg-emerald-500 self-start`} onClick={() => signIn()}>
-        Sign in / Create account
+    <section className="rw-card cf-auth">
+      <div className="cf-auth__who">
+        <span className="cf-brand__mark cf-brand__mark--lg" aria-hidden="true">
+          <Icon name="message" size={24} />
+        </span>
+        <div>
+          <p className="cf-auth__name">Sign in to ChatForge</p>
+          <p className="cf-auth__email">One account for the converter’s Vault and encrypted chat.</p>
+        </div>
+      </div>
+      <button type="button" className="rw-btn rw-btn--primary rw-btn--lg rw-btn--block" onClick={() => signIn()}>
+        Sign in or create an account
       </button>
-      <p className="text-xs text-zinc-500">You'll be taken to our secure sign-in — email, social logins, passkeys and 2FA all supported.</p>
-    </div>
+      <p className="cf-fineprint">You’ll be taken to our secure sign-in — email, social logins, passkeys and 2FA are all supported.</p>
+    </section>
   );
 }

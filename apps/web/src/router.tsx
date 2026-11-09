@@ -1,61 +1,41 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from '@tanstack/react-router';
+import { AppHeader } from './app/AppHeader';
 import { AdminPage } from './features/admin/AdminPage';
-import { ADMIN_SECTIONS } from './features/admin/registry';
 import { AccountPage } from './features/auth/AccountPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { Converter } from './features/converter/Converter';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { SettingsPage } from './features/settings/SettingsPage';
-import { useSession } from './lib/authClient';
-import { useMe } from './lib/useMe';
+import { Icon } from './ui/Icon';
 
-const navLink = 'text-zinc-300 transition hover:text-white [&.active]:text-sky-400';
+const SOURCE_URL = 'https://github.com/RobyRew/chatforge';
 
 function Shell() {
-  const { data } = useSession();
-  const { me } = useMe();
-  // Server-computed permissions decide the shortcut; the API still enforces every action regardless.
-  const canAdmin = !!me && ADMIN_SECTIONS.some((s) => me.permissions.includes(s.permission));
   return (
-    <div className="min-h-full bg-gradient-to-b from-zinc-950 to-zinc-900 text-zinc-100">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-5 py-8">
-        <header className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="inline-grid h-8 w-8 place-items-center rounded-xl bg-sky-500 text-sm font-bold">CF</span>
-            <span className="text-lg font-semibold">ChatForge</span>
-          </div>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link to="/" className={navLink}>
-              Convert
-            </Link>
-            <Link to="/chat" className={navLink}>
-              Chat
-            </Link>
-            {data && (
-              <Link to="/dashboard" className={navLink}>
-                Dashboard
-              </Link>
-            )}
-            {canAdmin && (
-              <Link to="/admin" className={navLink}>
-                Admin
-              </Link>
-            )}
-            {data && (
-              <Link to="/settings" className={navLink}>
-                Settings
-              </Link>
-            )}
-            <Link to="/account" className={navLink}>
-              {data ? data.user.email : 'Sign in'}
-            </Link>
+    <>
+      <a className="cf-skip" href="#main">
+        Skip to content
+      </a>
+      <AppHeader />
+      <main id="main" className="cf-main">
+        <Outlet />
+      </main>
+      <footer className="cf-foot">
+        <div className="cf-foot__inner">
+          <p className="cf-foot__privacy">
+            <Icon name="shield" size={16} />
+            Conversions run in your browser. Chats and saved conversations are end-to-end encrypted.
+          </p>
+          <nav className="cf-foot__links" aria-label="Footer">
+            <Link to="/">Convert</Link>
+            <Link to="/chat">Chat</Link>
+            <a href={SOURCE_URL} rel="noopener">
+              Source · Apache-2.0
+            </a>
           </nav>
-        </header>
-        <main>
-          <Outlet />
-        </main>
-      </div>
-    </div>
+        </div>
+      </footer>
+    </>
   );
 }
 

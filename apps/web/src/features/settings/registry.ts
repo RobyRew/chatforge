@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { Me } from '../../lib/api';
+import type { IconName } from '../../ui/Icon';
 import { DisplayPrefCard } from './sections/DisplayPrefCard';
 import { IntegrationsCard } from './sections/IntegrationsCard';
 import { NotificationsCard } from './sections/NotificationsCard';
@@ -21,15 +22,15 @@ export interface SettingsSectionProps {
 export interface SettingsSection {
   id: string;
   label: string;
-  icon: string;
+  icon: IconName;
   description: string;
   Cards: ComponentType<SettingsSectionProps>[];
 }
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { id: 'profile', label: 'Profile', icon: '👤', description: 'How you appear to other people.', Cards: [ProfileCard] },
-  { id: 'chat', label: 'Chat', icon: '💬', description: 'Appearance and alerts.', Cards: [DisplayPrefCard, NotificationsCard] },
-  { id: 'privacy', label: 'Privacy', icon: '🔒', description: 'Encryption, verification and your account security.', Cards: [PrivacyCard, SecurityCard] },
-  { id: 'vault', label: 'Vault', icon: '🗄️', description: 'Saved conversations and their passphrase.', Cards: [VaultPassphraseCard] },
-  { id: 'integrations', label: 'Integrations', icon: '🔌', description: 'Connect other services.', Cards: [IntegrationsCard] },
+  { id: 'profile', label: 'Profile', icon: 'contact', description: 'How you appear to other people.', Cards: [ProfileCard] },
+  { id: 'chat', label: 'Chat', icon: 'message', description: 'Appearance and alerts.', Cards: [DisplayPrefCard, NotificationsCard] },
+  { id: 'privacy', label: 'Privacy', icon: 'shield', description: 'Encryption, verification and your account security.', Cards: [PrivacyCard, SecurityCard] },
+  { id: 'vault', label: 'Vault', icon: 'lock', description: 'Saved conversations and their passphrase.', Cards: [VaultPassphraseCard] },
+  { id: 'integrations', label: 'Integrations', icon: 'zap', description: 'Connect other services.', Cards: [IntegrationsCard] },
 ];

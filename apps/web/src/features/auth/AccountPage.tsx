@@ -1,12 +1,11 @@
+import type { ReactNode } from 'react';
+import { PageHead } from '../../ui/controls';
 import { AuthPanel } from './AuthPanel';
 
-export function AccountPage() {
+export function AccountPage(): ReactNode {
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-4">
-      <h1 className="text-xl font-semibold">Account</h1>
-      <p className="text-sm text-zinc-400">
-        Sign in to save conversions and use end-to-end encrypted chat. Passkeys recommended.
-      </p>
+    <div className="cf-page cf-page--narrow">
+      <PageHead eyebrow="Account" icon="contact" title="Your ChatForge account" lead="Sign in to save conversions to your Vault and use end-to-end encrypted chat." />
       <AuthPanel />
     </div>
   );

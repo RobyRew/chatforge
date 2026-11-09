@@ -4,6 +4,7 @@ import type { Conversation } from '@chatforge/types';
 import { useMe } from '../../lib/useMe';
 import { resolveSaveMode, saveConversationToVault } from '../../lib/vault';
 import type { VaultMode } from '../../lib/vaultCrypto';
+import { Icon } from '../../ui/Icon';
 
 /**
  * Save the conversation open in the converter to the user's encrypted Vault. Only shown when signed in.
@@ -55,29 +56,30 @@ export function SaveToVault({
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="cf-vault">
+      <p className="cf-vault__title">
+        <Icon name="lock" size={15} />
+        ChatForge Vault
+      </p>
       {locked ? (
-        <div className="rounded-xl border border-amber-800/60 bg-amber-950/30 p-2.5 text-xs text-amber-200">
-          🔒 Your vault passphrase is locked.{' '}
-          <Link to="/settings" className="underline">
-            Unlock in Settings
-          </Link>{' '}
-          to save across devices.
-        </div>
+        <p className="cf-vault__locked">
+          Your vault passphrase is locked. <Link to="/settings">Unlock it in Settings</Link> to save across devices.
+        </p>
       ) : (
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={state === 'saving'}
-          className="rounded-xl border border-zinc-700 px-4 py-2.5 font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-40"
-        >
-          {state === 'saving' ? 'Encrypting…' : state === 'saved' ? '✓ Saved to Vault' : '🔒 Save to Vault'}
+        <button type="button" className={`rw-btn rw-btn--block${state === 'saved' ? ' cf-btn-ok' : ''}`} onClick={() => void save()} disabled={state === 'saving'}>
+          <Icon name={state === 'saved' ? 'checkCircle' : 'lock'} size={16} />
+          {state === 'saving' ? 'Encrypting…' : state === 'saved' ? 'Saved to Vault' : 'Save to Vault'}
         </button>
       )}
-      <p className="text-[11px] text-zinc-500">
-        {mode === 'passphrase' ? 'Encrypted with your vault passphrase (syncs across devices).' : 'Encrypted on this device; the server can’t read it.'} Find it in Chat → Vault.
+      <p className="cf-vault__hint">
+        {mode === 'passphrase' ? 'Encrypted with your vault passphrase, so it opens on your other devices.' : 'Encrypted on this device; the server can’t read it.'} Find it in Chat →
+        Vault.
       </p>
-      {error && <p className="text-xs text-rose-300">{error}</p>}
+      {error && (
+        <p className="cf-vault__error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

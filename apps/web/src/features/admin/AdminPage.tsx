@@ -1,50 +1,65 @@
-import { Link } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
+import { signIn } from '../../lib/authClient';
 import { useMe } from '../../lib/useMe';
+import { Loading, Notice, PageHead, Segmented } from '../../ui/controls';
 import { ADMIN_SECTIONS } from './registry';
-import { ui } from './ui';
-
-function Notice({ children }: { children: ReactNode }): ReactNode {
-  return <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-300">{children}</div>;
-}
 
 export function AdminPage(): ReactNode {
   const { me, loading } = useMe();
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState<string | null>(null);
 
-  if (loading) return <p className="text-sm text-zinc-400">Loading…</p>;
-  if (!me)
+  if (loading) {
     return (
-      <Notice>
-        Please{' '}
-        <Link to="/account" className="text-sky-400">
-          sign in
-        </Link>{' '}
-        to access the admin console.
-      </Notice>
+      <div className="cf-page">
+        <Loading />
+      </div>
     );
+  }
+  if (!me) {
+    return (
+      <div className="cf-page cf-page--narrow">
+        <Notice
+          icon="shield"
+          title="Sign in to open the admin console"
+          actions={
+            <button type="button" className="rw-btn rw-btn--primary" onClick={() => signIn()}>
+              Sign in
+            </button>
+          }
+        />
+      </div>
+    );
+  }
 
   const sections = ADMIN_SECTIONS.filter((s) => me.permissions.includes(s.permission));
-  if (!sections.length) return <Notice>Your account doesn’t have access to the admin console.</Notice>;
+  if (!sections.length) {
+    return (
+      <div className="cf-page cf-page--narrow">
+        <Notice icon="shield" title="No access">
+          Your account doesn’t have access to the admin console.
+        </Notice>
+      </div>
+    );
+  }
 
-  const current = sections[Math.min(active, sections.length - 1)]!;
+  const current = sections.find((s) => s.id === active) ?? sections[0]!;
   const Active = current.Component;
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold">Admin console</h1>
-        <p className="text-sm text-zinc-400">
-          {me.email} · role <span className="font-mono text-zinc-300">{me.role}</span>
-        </p>
+    <div className="cf-page cf-page--wide">
+      <PageHead
+        eyebrow="Admin"
+        icon="shield"
+        title="Admin console"
+        lead={
+          <>
+            {me.email} · role <code className="cf-code">{me.role}</code>
+          </>
+        }
+      />
+      <div className="cf-admin-tabs">
+        <Segmented role="tab" label="Admin sections" value={current.id} onChange={setActive} options={sections.map((s) => ({ value: s.id, label: s.label }))} />
       </div>
-      <nav className="flex flex-wrap gap-2 border-b border-zinc-800 pb-3">
-        {sections.map((s, i) => (
-          <button key={s.id} onClick={() => setActive(i)} className={`${ui.btn} ${current.id === s.id ? ui.primary : ui.ghost}`}>
-            {s.label}
-          </button>
-        ))}
-      </nav>
       <Active me={me} />
     </div>
   );

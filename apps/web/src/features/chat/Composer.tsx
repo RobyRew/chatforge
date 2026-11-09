@@ -1,13 +1,39 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { chatClient } from '../../lib/chatClient';
 import type { ReplyRef } from '../../lib/chatPayload';
+import { IconButton } from '../../ui/controls';
+import { Icon } from '../../ui/Icon';
 
 const MAX_FILES_PER_DROP = 10;
+/** The field grows with its text up to this height, then scrolls. */
+const MAX_FIELD_PX = 160;
 
-export function Composer({ conversationId, replyTo, onClearReply }: { conversationId: string; replyTo: ReplyRef | null; onClearReply: () => void }): ReactNode {
+export function Composer({
+  conversationId,
+  replyTo,
+  replyName,
+  onClearReply,
+}: {
+  conversationId: string;
+  replyTo: ReplyRef | null;
+  replyName?: string;
+  onClearReply: () => void;
+}): ReactNode {
   const [text, setText] = useState('');
   const lastTyping = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_PX)}px`;
+  }, [text]);
+
+  useLayoutEffect(() => {
+    if (replyTo) field.current?.focus();
+  }, [replyTo]);
 
   const send = (): void => {
     const body = text.trim();
@@ -37,39 +63,35 @@ export function Composer({ conversationId, replyTo, onClearReply }: { conversati
   };
 
   return (
-    <div className="border-t border-zinc-800">
+    <div className="cf-composer">
       {replyTo && (
-        <div className="flex items-center gap-2 px-3 pt-2 text-xs text-zinc-400">
-          <span className="min-w-0 truncate border-l-2 border-sky-500 pl-2">Replying: {replyTo.text.slice(0, 60)}</span>
-          <button onClick={onClearReply} className="ml-auto shrink-0 text-zinc-500 hover:text-white">
-            ✕
-          </button>
+        <div className="cf-composer__reply">
+          <Icon name="reply" size={15} />
+          <span className="cf-composer__replytext">
+            <strong>Replying{replyName ? ` to ${replyName}` : ''}</strong>
+            <span>{replyTo.text.slice(0, 80)}</span>
+          </span>
+          <IconButton icon="x" label="Cancel reply" onClick={onClearReply} />
         </div>
       )}
-      <div className="flex items-end gap-2 p-3">
+      <div className="cf-composer__row">
         <input
           ref={fileInput}
           type="file"
           multiple
-          className="hidden"
+          hidden
           onChange={(e) => {
             if (e.target.files) sendFiles(e.target.files);
             e.target.value = ''; // allow re-picking the same file
           }}
         />
-        <button
-          type="button"
-          title="Attach a file (encrypted before it leaves your browser)"
-          aria-label="Attach a file"
-          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:text-white"
-          onClick={() => fileInput.current?.click()}
-        >
-          📎
-        </button>
+        <IconButton icon="paperclip" label="Attach a file (encrypted before it leaves your browser)" onClick={() => fileInput.current?.click()} />
         <textarea
-          className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500"
+          ref={field}
+          className="cf-composer__field"
           rows={1}
-          placeholder="Type a message…"
+          placeholder="Message"
+          aria-label="Message"
           value={text}
           onChange={(e) => onChange(e.target.value)}
           onPaste={(e) => {
@@ -85,8 +107,8 @@ export function Composer({ conversationId, replyTo, onClearReply }: { conversati
             }
           }}
         />
-        <button className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40" disabled={!text.trim()} onClick={send}>
-          Send
+        <button type="button" className="cf-send" aria-label="Send" title="Send (Enter)" disabled={!text.trim()} onClick={send}>
+          <Icon name="send" size={18} />
         </button>
       </div>
     </div>

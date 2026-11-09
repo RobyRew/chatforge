@@ -1,35 +1,43 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { api, type VaultItem } from '../../lib/api';
+import type { ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
+import type { VaultItem } from '../../lib/api';
+import { Loading } from '../../ui/controls';
+import { Icon } from '../../ui/Icon';
 
-/** Sidebar list of the user's saved (imported) chats in the Vault. */
-export function VaultSection({ activeId, onOpen }: { activeId: string | null; onOpen: (id: string) => void }): ReactNode {
-  const [items, setItems] = useState<VaultItem[]>([]);
-
-  useEffect(() => {
-    void api.vault
-      .list()
-      .then(setItems)
-      .catch(() => {});
-  }, []);
-
-  if (!items.length) return null;
+/** The Vault tab: chats saved from the converter, end-to-end encrypted. `items` is null while loading. */
+export function VaultSection({ items, activeId, onOpen }: { items: VaultItem[] | null; activeId: string | null; onOpen: (id: string) => void }): ReactNode {
+  if (!items) return <Loading />;
+  if (!items.length) {
+    return (
+      <div className="cf-list-empty">
+        <p>Nothing saved yet.</p>
+        <p>
+          Open an export on <Link to="/">Convert</Link> and choose Save to Vault; it is encrypted before it leaves your browser.
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="flex flex-col gap-1">
-      <p className="px-1 pt-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Vault</p>
-      <ul className="flex flex-col gap-1">
-        {items.map((it) => (
-          <li key={it.id}>
-            <button
-              onClick={() => onOpen(it.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${activeId === it.id ? 'bg-amber-600/20 text-white' : 'text-zinc-300 hover:bg-zinc-800'}`}
-            >
-              <span>📁</span>
-              <span className="truncate">{it.label || 'Saved chat'}</span>
-              <span className="ml-auto text-[10px] text-zinc-500">{it.messageCount}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="cf-rows">
+      {items.map((it) => (
+        <li key={it.id}>
+          <button type="button" onClick={() => onOpen(it.id)} className={`cf-row${activeId === it.id ? ' is-active' : ''}`} aria-current={activeId === it.id ? 'true' : undefined}>
+            <span className="cf-row__avatar">
+              <span className="cf-tile cf-tile--vault" aria-hidden="true">
+                <Icon name="lock" size={18} />
+              </span>
+            </span>
+            <span className="cf-row__main">
+              <span className="cf-row__top">
+                <span className="cf-row__title">{it.label || 'Saved chat'}</span>
+              </span>
+              <span className="cf-row__sub">
+                {it.messageCount} {it.messageCount === 1 ? 'message' : 'messages'}
+              </span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

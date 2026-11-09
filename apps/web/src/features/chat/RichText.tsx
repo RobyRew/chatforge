@@ -14,11 +14,11 @@ export function RichText({ value }: { value?: RichTextValue }) {
           else if (t === 'italic') node = <em>{node}</em>;
           else if (t === 'underline') node = <u>{node}</u>;
           else if (t === 'strikethrough') node = <s>{node}</s>;
-          else if (t === 'code' || t === 'pre') node = <code className="rounded bg-black/30 px-1">{node}</code>;
-          else if (t === 'spoiler') node = <span className="rounded bg-zinc-500/70 transition hover:bg-transparent">{node}</span>;
+          else if (t === 'code' || t === 'pre') node = <code>{node}</code>;
+          else if (t === 'spoiler') node = <mark className="cf-spoiler">{node}</mark>;
           else if (t === 'link') {
             node = (
-              <a href={seg.url ?? '#'} target="_blank" rel="noreferrer" className="text-sky-400 underline">
+              <a href={seg.url ?? '#'} target="_blank" rel="noreferrer">
                 {node}
               </a>
             );

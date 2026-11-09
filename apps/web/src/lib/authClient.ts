@@ -10,6 +10,9 @@ import { useEffect, useState } from 'react';
  */
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+/** Logto's hosted account UI — where password, passkeys, social logins and 2FA are managed. */
+export const ACCOUNT_URL = 'https://auth.robyrew.com';
+
 export interface SessionUser {
   id: string;
   email: string;

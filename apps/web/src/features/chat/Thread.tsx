@@ -1,20 +1,54 @@
 import type { ConversationSummary } from '@chatforge/types';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { attachmentUrl, formatBytes, isRenderableImage, type AttachmentRef } from '../../lib/attachments';
 import { chatClient, type ChatState, type UiMessage } from '../../lib/chatClient';
 import type { ReplyRef } from '../../lib/chatPayload';
 import { contactLabel, contactsStore, handleFor, useContacts } from '../../lib/contacts';
 import { conversationLabel, peerLabel } from '../../lib/displayPref';
 import { loadVerification, type VerificationStatus } from '../../lib/keyVerification';
-import { Avatar } from './Avatar';
+import { IconButton } from '../../ui/controls';
+import { Icon } from '../../ui/Icon';
+import type { MenuEntry } from '../../ui/Sheet';
+import { Avatar, GroupMark, hueOf, PresenceDot, presenceKind } from './Avatar';
 import { Composer } from './Composer';
 import { ContextMenu, useLongPress } from './ContextMenu';
 import { GroupPanel } from './GroupPanel';
 import { VerifyKeys } from './VerifyKeys';
 
 const QUICK_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+/** Consecutive messages from one sender within this window share a bubble group, as in chat-converter's preview. */
+const GROUP_WINDOW_MS = 5 * 60_000;
 
-export function Thread({ conversation, state, myId }: { conversation: ConversationSummary; state: ChatState; myId: string }): ReactNode {
+type Row = { type: 'day'; key: string; label: string } | { type: 'msg'; key: string; m: UiMessage; cont: boolean };
+
+function dayLabel(d: Date): string {
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) });
+}
+
+/** Day separators plus a `cont` flag for messages that continue the previous one's group. */
+function toRows(messages: UiMessage[]): Row[] {
+  const rows: Row[] = [];
+  let day = '';
+  let prev: UiMessage | undefined;
+  for (const m of messages) {
+    const d = new Date(m.ts);
+    if (d.toDateString() !== day) {
+      day = d.toDateString();
+      rows.push({ type: 'day', key: `day-${day}`, label: dayLabel(d) });
+      prev = undefined;
+    }
+    const cont = !!prev && prev.senderId === m.senderId && m.ts - prev.ts < GROUP_WINDOW_MS && !prev.deleted && !m.deleted;
+    rows.push({ type: 'msg', key: m.id, m, cont });
+    prev = m;
+  }
+  return rows;
+}
+
+export function Thread({ conversation, state, myId, onBack }: { conversation: ConversationSummary; state: ChatState; myId: string; onBack: () => void }): ReactNode {
   const messages = state.messages[conversation.id] ?? [];
   const base = conversation.peers[0];
   const peer = base ? { ...base, ...state.profiles[base.id] } : undefined;
@@ -34,6 +68,14 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
   const isGroup = conversation.kind === 'group';
   const { contacts } = useContacts();
   const saved = !!peer && contacts.some((c) => c.id === peer.id);
+  const rows = useMemo(() => toRows(messages), [messages]);
+
+  /** Who sent a message, for the name over incoming bubbles in a group. */
+  const senderLabel = (senderId: string): string => {
+    const p = conversation.peers.find((x) => x.id === senderId);
+    if (!p) return 'Former member';
+    return contactLabel({ ...p, ...state.profiles[p.id] }, contacts);
+  };
 
   const toggleContact = async (): Promise<void> => {
     if (!peer) return;
@@ -52,11 +94,12 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
   };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, typing]);
 
   useEffect(() => {
     lastReadSent.current = 0;
+    setReplyTo(null);
   }, [conversation.id]);
 
   useEffect(() => {
@@ -81,10 +124,43 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
   }, [conversation.id, base, isGroup, messages.length]);
 
   const menuMsg = menu ? messages.find((m) => m.seq === menu.seq) : undefined;
+  const title = !isGroup && peer ? contactLabel(peer, contacts) : conversationLabel({ ...conversation, peers: peer ? [peer] : conversation.peers });
+  const kind = presenceKind(presence);
+  const subtitle = isGroup
+    ? `${conversation.peers.length + 1} members`
+    : kind === 'away'
+      ? 'Away'
+      : kind === 'online'
+        ? 'Online'
+        : presence?.lastSeenAt
+          ? `Last seen ${new Date(presence.lastSeenAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+          : 'Offline';
+  const status = !isGroup && (peer?.statusEmoji || peer?.statusText) ? `${peer?.statusEmoji ?? ''} ${peer?.statusText ?? ''}`.trim() : null;
+
+  const menuEntries: MenuEntry[] =
+    menu && menuMsg
+      ? [
+          ...(menuMsg.deleted
+            ? []
+            : ([
+                {
+                  label: 'Reply',
+                  icon: 'reply',
+                  onSelect: () => setReplyTo({ seq: menu.seq, text: menuMsg.text || (menuMsg.attachment ? `📎 ${menuMsg.attachment.name}` : ''), senderId: menuMsg.senderId }),
+                },
+                menuMsg.text ? { label: 'Copy text', icon: 'copy', onSelect: () => void navigator.clipboard?.writeText(menuMsg.text) } : null,
+                menuMsg.attachment ? { label: 'Save file', icon: 'download', onSelect: () => void saveAttachment(menuMsg.attachment!) } : null,
+                'separator',
+                // Only my own messages can be unsent — the server enforces this too.
+                menuMsg.mine ? { label: 'Delete for everyone', icon: 'trash', danger: true, onSelect: () => chatClient.deleteMessage(conversation.id, menu.seq) } : null,
+              ] satisfies MenuEntry[])),
+          { label: 'Remove for me', icon: 'minusCircle', hint: 'Only on this device', onSelect: () => void chatClient.hideMessage(conversation.id, menu.seq) },
+        ]
+      : [];
 
   return (
     <div
-      className="relative flex h-[72vh] flex-col rounded-xl border border-zinc-800 bg-zinc-900/40"
+      className="cf-thread"
       // Depth-counted so moving over child elements doesn't flicker the overlay off.
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return;
@@ -109,87 +185,111 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
         setReplyTo(null);
       }}
     >
-      <header className="flex flex-wrap items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
-        {isGroup ? (
-          <span className="inline-grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-700 text-base" aria-hidden>
-            👥
-          </span>
-        ) : (
-          <Avatar image={peer?.image} label={peer ? peerLabel(peer) : '?'} size={36} />
-        )}
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-zinc-100">
-            {!isGroup && peer ? contactLabel(peer, contacts) : conversationLabel({ ...conversation, peers: peer ? [peer] : conversation.peers })}
-          </p>
-          <p className="truncate text-xs text-zinc-500">
-            {isGroup
-              ? `${conversation.peers.length + 1} members`
-              : presence?.state === 'away'
-                ? 'away'
-                : presence?.online
-                  ? 'online'
-                  : presence?.lastSeenAt
-                    ? `last seen ${new Date(presence.lastSeenAt).toLocaleString()}`
-                    : 'offline'}
-            {!isGroup && (peer?.statusEmoji || peer?.statusText) && ` · ${peer?.statusEmoji ?? ''} ${peer?.statusText ?? ''}`.trimEnd()}
+      <header className="cf-topbar">
+        <button type="button" className="cf-back" onClick={onBack} aria-label="Back to conversations">
+          <Icon name="chevronLeft" size={20} />
+          <span>Chats</span>
+        </button>
+        <span className="cf-topbar__avatar">
+          {isGroup ? (
+            <GroupMark size={38} />
+          ) : (
+            <>
+              <Avatar image={peer?.image} label={peer ? peerLabel(peer) : '?'} size={38} />
+              <PresenceDot kind={kind} />
+            </>
+          )}
+        </span>
+        <div className="cf-topbar__titles">
+          <p className="cf-topbar__title">{title}</p>
+          <p className="cf-topbar__sub">
+            <span className={kind === 'online' && !isGroup ? 'is-online' : undefined}>{subtitle}</span>
+            {status && <span>{status}</span>}
           </p>
         </div>
-        {isGroup ? (
-          <button
-            className="ml-auto whitespace-nowrap rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-200"
-            onClick={() => setShowGroup(true)}
-          >
-            👥 members
-          </button>
-        ) : (
-          <>
-          <button
-            className={`ml-auto whitespace-nowrap rounded-full border px-2 py-1 text-xs transition ${
-              saved ? 'border-sky-700/60 text-sky-300 hover:border-sky-500' : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
-            }`}
-            disabled={savingContact || !peer}
-            onClick={() => void toggleContact()}
-            title={saved ? 'Saved to your contacts — click to remove' : 'Save to your contacts (they are not notified)'}
-          >
-            {saved ? '★ saved' : '☆ save contact'}
-          </button>
-          <button
-            className={`whitespace-nowrap rounded-full border px-2 py-1 text-xs transition ${
-              verifyStatus === 'verified'
-                ? 'border-emerald-700/60 text-emerald-400 hover:border-emerald-500'
-                : verifyStatus === 'changed'
-                  ? 'border-amber-600 text-amber-300 hover:border-amber-400'
-                  : 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'
-            }`}
-            onClick={() => setVerifying(true)}
-            title="Compare safety numbers to confirm nobody is intercepting this chat"
-          >
-            {verifyStatus === 'verified' ? '✓ verified' : verifyStatus === 'changed' ? '⚠ key changed' : '🔒 verify keys'}
-          </button>
-          </>
-        )}
+        <div className="cf-topbar__actions">
+          {isGroup ? (
+            <button type="button" className="cf-chipbtn" onClick={() => setShowGroup(true)}>
+              <Icon name="users" size={16} />
+              <span>Members</span>
+            </button>
+          ) : (
+            <>
+              <IconButton
+                icon="star"
+                filled={saved}
+                tone={saved ? 'accent' : undefined}
+                disabled={savingContact || !peer}
+                label={saved ? 'Saved to your contacts — remove' : 'Save to your contacts (they are not notified)'}
+                onClick={() => void toggleContact()}
+              />
+              <button
+                type="button"
+                className={`cf-chipbtn is-${verifyStatus}`}
+                onClick={() => setVerifying(true)}
+                title="Compare safety numbers to confirm nobody is intercepting this chat"
+              >
+                <Icon name={verifyStatus === 'changed' ? 'alert' : 'shield'} size={16} />
+                <span>{verifyStatus === 'verified' ? 'Verified' : verifyStatus === 'changed' ? 'Key changed' : 'Verify'}</span>
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
-        {messages.length === 0 && <p className="text-center text-xs text-zinc-500">No messages yet — say hi 👋</p>}
-        {messages.map((m) => (
-          <Bubble key={m.id} m={m} read={m.seq !== null && peerRead >= m.seq} myId={myId} conversationId={conversation.id} onMenu={(seq, x, y) => setMenu({ seq, x, y })} />
-        ))}
-        {typing && <p className="text-xs italic text-zinc-500">{peer?.email ?? 'Peer'} is typing…</p>}
-        <div ref={bottomRef} />
+      <div className="cf-thread__body">
+        <div className="cf-thread__inner">
+          {messages.length === 0 && (
+            <div className="cf-thread__hello">
+              <Icon name="lock" size={18} />
+              <p>Messages here are end-to-end encrypted. Say hi.</p>
+            </div>
+          )}
+          {rows.map((row) =>
+            row.type === 'day' ? (
+              <div key={row.key} className="cf-day">
+                <span>{row.label}</span>
+              </div>
+            ) : (
+              <Bubble
+                key={row.key}
+                m={row.m}
+                cont={row.cont}
+                who={isGroup && !row.m.mine && !row.cont ? senderLabel(row.m.senderId) : undefined}
+                read={row.m.seq !== null && peerRead >= row.m.seq}
+                myId={myId}
+                conversationId={conversation.id}
+                onMenu={(seq, x, y) => setMenu({ seq, x, y })}
+              />
+            ),
+          )}
+          {typing && (
+            <div className="cf-typing">
+              <span className="cf-typing__dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              {isGroup ? 'Someone is typing…' : `${peer ? contactLabel(peer, contacts) : 'They'} is typing…`}
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
-      <Composer conversationId={conversation.id} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+      <Composer conversationId={conversation.id} replyTo={replyTo} replyName={replyTo ? (replyTo.senderId === myId ? 'yourself' : senderLabel(replyTo.senderId)) : undefined} onClearReply={() => setReplyTo(null)} />
 
       {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-xl border-2 border-dashed border-sky-500 bg-zinc-950/80">
-          <p className="text-sm text-sky-300">Drop to send — encrypted before it leaves your browser</p>
+        <div className="cf-dropveil">
+          <div className="cf-dropveil__card">
+            <Icon name="upload" size={26} />
+            <p>Drop to send</p>
+            <small>Encrypted before it leaves your browser</small>
+          </div>
         </div>
       )}
 
-      {showGroup && (
-        <GroupPanel conversation={conversation} state={state} myId={myId} onClose={() => setShowGroup(false)} />
-      )}
+      {showGroup && <GroupPanel conversation={conversation} state={state} myId={myId} onClose={() => setShowGroup(false)} />}
 
       {verifying && base && (
         <VerifyKeys
@@ -207,78 +307,125 @@ export function Thread({ conversation, state, myId }: { conversation: Conversati
         <ContextMenu
           x={menu.x}
           y={menu.y}
+          label="Message actions"
           onClose={() => setMenu(null)}
           header={
-            <div className="flex gap-1 border-b border-zinc-800 px-2 py-1.5">
-              {QUICK_EMOJI.map((e) => (
-                <button
-                  key={e}
-                  className="rounded px-1 text-lg hover:bg-zinc-800"
-                  onClick={() => {
-                    void chatClient.sendReaction(conversation.id, menu.seq, e);
-                    setMenu(null);
-                  }}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+            menuMsg.deleted ? undefined : (
+              <div className="cf-quick" role="group" aria-label="React">
+                {QUICK_EMOJI.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    className="cf-quick__btn"
+                    aria-label={`React with ${e}`}
+                    onClick={() => {
+                      void chatClient.sendReaction(conversation.id, menu.seq, e);
+                      setMenu(null);
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )
           }
-          items={[
-            ...(menuMsg.deleted
-              ? []
-              : [
-                  { label: 'Reply', onClick: () => setReplyTo({ seq: menu.seq, text: menuMsg.text || (menuMsg.attachment ? `📎 ${menuMsg.attachment.name}` : ''), senderId: menuMsg.senderId }) },
-                  ...(menuMsg.text ? [{ label: 'Copy text', onClick: () => void navigator.clipboard?.writeText(menuMsg.text) }] : []),
-                  ...(menuMsg.attachment ? [{ label: 'Save file', onClick: () => void saveAttachment(menuMsg.attachment!) }] : []),
-                  // Only my own messages can be unsent — the server enforces this too.
-                  ...(menuMsg.mine ? [{ label: 'Delete for everyone', onClick: () => chatClient.deleteMessage(conversation.id, menu.seq) }] : []),
-                ]),
-            { label: 'Remove for me', onClick: () => void chatClient.hideMessage(conversation.id, menu.seq) },
-          ]}
+          entries={menuEntries}
         />
       )}
     </div>
   );
 }
 
-function Bubble({ m, read, myId, conversationId, onMenu }: { m: UiMessage; read: boolean; myId: string; conversationId: string; onMenu: (seq: number, x: number, y: number) => void }): ReactNode {
+function Bubble({
+  m,
+  cont,
+  who,
+  read,
+  myId,
+  conversationId,
+  onMenu,
+}: {
+  m: UiMessage;
+  cont: boolean;
+  who?: string;
+  read: boolean;
+  myId: string;
+  conversationId: string;
+  onMenu: (seq: number, x: number, y: number) => void;
+}): ReactNode {
   const press = useLongPress((x, y) => {
     if (m.seq !== null) onMenu(m.seq, x, y);
   });
+  const time = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
-    <div className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
-      <div className="flex max-w-[75%] flex-col gap-1">
-        <div {...press} className={`rounded-2xl px-3 py-2 text-sm ${m.mine ? 'bg-sky-600 text-white' : 'bg-zinc-800 text-zinc-100'} ${m.pending ? 'opacity-60' : ''}`}>
-          {m.replyTo && <div className="mb-1 border-l-2 border-white/40 pl-2 text-xs opacity-80">↩ {m.replyTo.text.slice(0, 80)}</div>}
-          {m.uploading && <p className="py-1 text-xs opacity-80">🔐 Encrypting &amp; uploading…</p>}
+    <div className={`cf-msg ${m.mine ? 'cf-msg--out' : 'cf-msg--in'}${cont ? ' is-cont' : ''}${m.pending ? ' is-pending' : ''}`}>
+      <div className="cf-msg__line">
+        <div {...press} className={`cf-bubble${m.deleted ? ' is-deleted' : ''}`}>
+          {who && (
+            <p className="cf-bubble__who" style={{ '--who-hue': hueOf(who) } as CSSProperties}>
+              {who}
+            </p>
+          )}
+          {m.replyTo && (
+            <div className="cf-bubble__reply">
+              <Icon name="reply" size={13} />
+              <span>{m.replyTo.text.slice(0, 80)}</span>
+            </div>
+          )}
+          {m.uploading && (
+            <p className="cf-bubble__note">
+              <span className="cf-spinner" aria-hidden="true" /> Encrypting and uploading…
+            </p>
+          )}
           {m.deleted ? (
-            <p className="italic opacity-70">🚫 This message was deleted</p>
+            <p className="cf-bubble__deleted">
+              <Icon name="minusCircle" size={14} />
+              This message was deleted
+            </p>
           ) : (
             <>
-              {m.attachment && <Attachment att={m.attachment} mine={m.mine} />}
-              {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+              {m.attachment && <Attachment att={m.attachment} />}
+              {m.text && <p className="cf-bubble__text">{m.text}</p>}
             </>
           )}
-          <p className={`mt-0.5 text-[10px] ${m.mine ? 'text-sky-200' : 'text-zinc-500'}`}>
-            {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            {m.mine && (m.pending ? ' · …' : read ? ' · ✓✓' : ' · ✓')}
-          </p>
+          <span className="cf-bubble__time">
+            {time}
+            {m.mine && (
+              <span className={`cf-ticks${read ? ' is-read' : ''}`} aria-label={m.pending ? 'Sending' : read ? 'Read' : 'Delivered'}>
+                <Icon name={m.pending ? 'clock' : read ? 'checks' : 'check'} size={13} />
+              </span>
+            )}
+          </span>
         </div>
-        {!m.deleted && m.reactions && m.reactions.length > 0 && (
-          <div className={`flex flex-wrap gap-1 ${m.mine ? 'justify-end' : ''}`}>
-            {m.reactions.map((r) => (
-              <button
-                key={r.emoji}
-                onClick={() => m.seq !== null && void chatClient.sendReaction(conversationId, m.seq, r.emoji)}
-                className={`rounded-full px-1.5 py-0.5 text-xs ${r.by.includes(myId) ? 'bg-sky-600/40 text-white' : 'bg-zinc-800 text-zinc-300'}`}
-              >
-                {r.emoji} {r.by.length}
-              </button>
-            ))}
-          </div>
+        {m.seq !== null && (
+          <button
+            type="button"
+            className="cf-msg__more"
+            aria-label="Message actions"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onMenu(m.seq!, m.mine ? r.left - 220 : r.left, r.bottom + 4);
+            }}
+          >
+            <Icon name="more" size={16} />
+          </button>
         )}
       </div>
+      {!m.deleted && m.reactions && m.reactions.length > 0 && (
+        <div className="cf-reactions">
+          {m.reactions.map((r) => (
+            <button
+              key={r.emoji}
+              type="button"
+              onClick={() => m.seq !== null && void chatClient.sendReaction(conversationId, m.seq, r.emoji)}
+              className={`cf-reaction${r.by.includes(myId) ? ' is-mine' : ''}`}
+              aria-pressed={r.by.includes(myId)}
+            >
+              {r.emoji} <span>{r.by.length}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -287,7 +434,7 @@ function Bubble({ m, read, myId, conversationId, onMenu }: { m: UiMessage; read:
  * An attachment inside a bubble. Images decrypt and render inline; anything else stays a chip until
  * you ask for it, so a big file isn't downloaded just by scrolling past it.
  */
-function Attachment({ att, mine }: { att: AttachmentRef; mine: boolean }): ReactNode {
+function Attachment({ att }: { att: AttachmentRef }): ReactNode {
   const isImage = isRenderableImage(att.mime);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -306,26 +453,39 @@ function Attachment({ att, mine }: { att: AttachmentRef; mine: boolean }): React
     };
   }, [att, isImage]);
 
-  if (error) return <p className={`py-1 text-xs ${mine ? 'text-sky-100' : 'text-rose-400'}`}>⚠ {error}</p>;
+  if (error) {
+    return (
+      <p className="cf-bubble__note is-error">
+        <Icon name="alert" size={14} /> {error}
+      </p>
+    );
+  }
 
   if (isImage) {
-    if (!url) return <p className="py-1 text-xs opacity-80">{loading ? '🔓 Decrypting…' : ''}</p>;
+    if (!url) {
+      return <div className="cf-bubble__imgwait">{loading && <span className="cf-spinner" aria-label="Decrypting" />}</div>;
+    }
     return (
-      <a href={url} target="_blank" rel="noreferrer noopener" className="block">
-        <img src={url} alt={att.name} className="max-h-72 w-auto rounded-lg" />
+      <a href={url} target="_blank" rel="noreferrer noopener" className="cf-bubble__imglink">
+        <img src={url} alt={att.name} className="cf-bubble__img" />
       </a>
     );
   }
 
   return (
-    <div className={`my-1 flex items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? 'bg-sky-700/60' : 'bg-zinc-900/70'}`}>
-      <span className="text-lg">📎</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium">{att.name}</span>
-        <span className="block text-[10px] opacity-70">{formatBytes(att.size)}</span>
+    <div className="cf-att">
+      <span className="cf-att__icon" aria-hidden="true">
+        <Icon name="file" size={17} />
+      </span>
+      <span className="cf-att__text">
+        <span className="cf-att__name">{att.name}</span>
+        <span className="cf-att__size">{formatBytes(att.size)}</span>
       </span>
       <button
-        className="shrink-0 rounded border border-white/20 px-2 py-0.5 text-[11px] transition hover:bg-white/10 disabled:opacity-50"
+        type="button"
+        className="cf-iconbtn"
+        aria-label={`Save ${att.name}`}
+        title="Decrypt and save"
         disabled={loading}
         onClick={() => {
           setLoading(true);
@@ -335,7 +495,7 @@ function Attachment({ att, mine }: { att: AttachmentRef; mine: boolean }): React
             .finally(() => setLoading(false));
         }}
       >
-        {loading ? '…' : 'Save'}
+        {loading ? <span className="cf-spinner" aria-hidden="true" /> : <Icon name="download" size={17} />}
       </button>
     </div>
   );

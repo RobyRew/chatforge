@@ -21,6 +21,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@robyrew/web-config": "github:RobyRew/web-config#v0.2.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",

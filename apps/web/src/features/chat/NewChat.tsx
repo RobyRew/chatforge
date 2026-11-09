@@ -1,9 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { chatClient } from '../../lib/chatClient';
+import { Segmented } from '../../ui/controls';
+import { Icon } from '../../ui/Icon';
+import { ErrorText } from '../../ui/kit';
+import { Sheet } from '../../ui/Sheet';
 
-const field = 'w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500';
-
-export function NewChat({ onCreated }: { onCreated: (conversationId: string) => void }): ReactNode {
+/** Start a direct chat or a group, in a sheet opened from the conversation list. */
+export function NewChat({ onCreated, onClose }: { onCreated: (conversationId: string) => void; onClose: () => void }): ReactNode {
   const [mode, setMode] = useState<'dm' | 'group'>('dm');
   const [handle, setHandle] = useState('');
   const [title, setTitle] = useState('');
@@ -17,8 +20,8 @@ export function NewChat({ onCreated }: { onCreated: (conversationId: string) => 
     try {
       const id = await fn();
       if (id) {
-        onCreated(id);
         reset();
+        onCreated(id);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -40,66 +43,61 @@ export function NewChat({ onCreated }: { onCreated: (conversationId: string) => 
     );
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-      <div className="flex gap-1" role="tablist" aria-label="New conversation type">
-        {(['dm', 'group'] as const).map((m) => (
-          <button
-            key={m}
-            role="tab"
-            aria-selected={mode === m}
-            onClick={() => {
-              setMode(m);
-              setError(undefined);
-            }}
-            className={`rounded-lg px-2.5 py-1 text-xs transition ${mode === m ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            {m === 'dm' ? 'Direct' : 'Group'}
-          </button>
-        ))}
-      </div>
+    <Sheet label="New conversation" title="New conversation" onClose={onClose}>
+      <Segmented<'dm' | 'group'>
+        label="Conversation type"
+        value={mode}
+        onChange={(m) => {
+          setMode(m);
+          setError(undefined);
+        }}
+        options={[
+          { value: 'dm', label: 'Direct', icon: 'contact' },
+          { value: 'group', label: 'Group', icon: 'users' },
+        ]}
+      />
 
       {mode === 'dm' ? (
-        <>
-          <input
-            className={field}
-            type="text"
-            placeholder="email or @username"
-            value={handle}
-            disabled={busy}
-            onChange={(e) => setHandle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handle.trim() && void startDm()}
-          />
-          <button
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
-            disabled={busy || !handle.trim()}
-            onClick={() => void startDm()}
-          >
+        <form
+          className="cf-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (handle.trim()) void startDm();
+          }}
+        >
+          <label className="cf-form__field">
+            <span className="rw-label">Who</span>
+            <input className="rw-field" type="text" placeholder="email or @username" value={handle} disabled={busy} onChange={(e) => setHandle(e.target.value)} data-autofocus />
+          </label>
+          <button type="submit" className="rw-btn rw-btn--primary rw-btn--block" disabled={busy || !handle.trim()}>
+            <Icon name="message" size={16} />
             {busy ? 'Starting…' : 'Start chat'}
           </button>
-        </>
+        </form>
       ) : (
-        <>
-          <input className={field} type="text" placeholder="Group name" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} />
-          <textarea
-            className={`${field} min-h-[60px] resize-y`}
-            placeholder={'Members — one per line\nemail or @username'}
-            value={members}
-            disabled={busy}
-            onChange={(e) => setMembers(e.target.value)}
-          />
-          <button
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
-            disabled={busy || !title.trim() || memberList().length === 0}
-            onClick={() => void startGroup()}
-          >
+        <form
+          className="cf-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (title.trim() && memberList().length) void startGroup();
+          }}
+        >
+          <label className="cf-form__field">
+            <span className="rw-label">Group name</span>
+            <input className="rw-field" type="text" placeholder="Weekend plans" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} data-autofocus />
+          </label>
+          <label className="cf-form__field">
+            <span className="rw-label">Members</span>
+            <textarea className="rw-field" placeholder={'One per line\nemail or @username'} value={members} disabled={busy} onChange={(e) => setMembers(e.target.value)} />
+            <span className="rw-hint">Everyone must have opened Chat at least once, so their encryption keys exist.</span>
+          </label>
+          <button type="submit" className="rw-btn rw-btn--primary rw-btn--block" disabled={busy || !title.trim() || memberList().length === 0}>
+            <Icon name="users" size={16} />
             {busy ? 'Creating…' : `Create group${memberList().length ? ` (${memberList().length})` : ''}`}
           </button>
-          <p className="text-[11px] text-zinc-600">
-            Everyone must have opened Chat at least once, so their encryption keys exist.
-          </p>
-        </>
+        </form>
       )}
-      {error && <p className="text-xs text-rose-300">{error}</p>}
-    </div>
+      <ErrorText>{error}</ErrorText>
+    </Sheet>
   );
 }

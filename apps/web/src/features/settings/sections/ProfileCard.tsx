@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Me, type Profile } from '../../../lib/api';
-import { ui } from '../../admin/ui';
+import { Banner } from '../../../ui/controls';
+import { Icon } from '../../../ui/Icon';
+import { Card, ErrorText } from '../../../ui/kit';
 import { Avatar } from '../../chat/Avatar';
 
 export function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<void> }): ReactNode {
@@ -61,74 +63,102 @@ export function ProfileCard({ me, onSaved }: { me: Me; onSaved: () => Promise<vo
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-      <div className="flex items-center gap-3">
-        <Avatar image={p.image} label={p.name || me.email} size={48} />
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-zinc-200">Profile</h3>
-          <p className="truncate text-xs text-zinc-500">{me.email}</p>
-        </div>
-        <div className="ml-auto flex shrink-0 gap-2">
-          <input
-            ref={avatarInput}
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void uploadAvatar(file);
-            }}
-          />
-          <button className={ui.btn} disabled={busy} onClick={() => avatarInput.current?.click()}>
-            Upload photo
-          </button>
-          {p.image && (
-            <button className={ui.btn} disabled={busy} onClick={() => void uploadAvatar(null)}>
-              Remove
+    <>
+      <section className="rw-card cf-card cf-profile">
+        <div className="cf-profile__who">
+          <Avatar image={p.image} label={p.name || me.email} size={72} />
+          <div className="cf-profile__names">
+            <p className="cf-profile__name">{p.name || me.email}</p>
+            <p className="cf-profile__email">
+              {p.username ? `@${p.username} · ` : ''}
+              {me.email}
+            </p>
+            {(p.statusEmoji || p.statusText) && (
+              <p className="cf-profile__status">
+                {p.statusEmoji} {p.statusText}
+              </p>
+            )}
+          </div>
+          <div className="cf-profile__photo">
+            <input
+              ref={avatarInput}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void uploadAvatar(file);
+              }}
+            />
+            <button type="button" className="rw-btn rw-btn--sm" disabled={busy} onClick={() => avatarInput.current?.click()}>
+              <Icon name="image" size={15} />
+              Upload photo
             </button>
-          )}
+            {p.image && (
+              <button type="button" className="rw-btn rw-btn--sm rw-btn--danger" disabled={busy} onClick={() => void uploadAvatar(null)}>
+                Remove
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-xs text-zinc-400">
-          Display name
-          <input className={ui.field} value={p.name} onChange={(e) => set({ name: e.target.value })} placeholder="Your name" />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-zinc-400">
-          Username
-          <input className={ui.field} value={p.username ?? ''} onChange={(e) => set({ username: e.target.value.toLowerCase() })} placeholder="a–z, 0–9, _" />
-        </label>
-      </div>
-      <label className="flex flex-col gap-1 text-xs text-zinc-400">
-        Avatar URL <span className="text-zinc-600">— set by “Upload photo”, or point at an external image</span>
-        <input className={ui.field} value={p.image ?? ''} onChange={(e) => set({ image: e.target.value || null })} placeholder="https://…" />
-      </label>
-      <div className="grid gap-2 sm:grid-cols-[88px_1fr]">
-        <label className="flex flex-col gap-1 text-xs text-zinc-400">
-          Status
-          <input className={ui.field} value={p.statusEmoji ?? ''} onChange={(e) => set({ statusEmoji: e.target.value || null })} placeholder="🎵" />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-zinc-400">
-          <span className="invisible">x</span>
-          <input className={ui.field} value={p.statusText ?? ''} onChange={(e) => set({ statusText: e.target.value || null })} placeholder="What you’re up to" />
-        </label>
-      </div>
-      <label className="flex flex-col gap-1 text-xs text-zinc-400">
-        Bio
-        <input className={ui.field} value={p.bio ?? ''} onChange={(e) => set({ bio: e.target.value || null })} placeholder="A line about you" />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-zinc-400">
-        About
-        <textarea className={`${ui.field} min-h-[60px] resize-y`} value={p.about ?? ''} onChange={(e) => set({ about: e.target.value || null })} placeholder="More about you" />
-      </label>
-      <div className="flex items-center gap-3">
-        <button className={`${ui.btn} ${ui.primary}`} disabled={busy} onClick={() => void save()}>
-          Save
-        </button>
-        {msg && <span className="text-sm text-emerald-300">{msg}</span>}
-        {error && <span className="text-sm text-rose-300">{error}</span>}
-      </div>
-    </section>
+      </section>
+
+      <Card icon="contact" title="Details" description="Shown to the people you chat with.">
+        <form
+          className="cf-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <div className="cf-form__grid">
+            <label className="cf-form__field">
+              <span className="rw-label">Display name</span>
+              <input className="rw-field" value={p.name} onChange={(e) => set({ name: e.target.value })} placeholder="Your name" />
+            </label>
+            <label className="cf-form__field">
+              <span className="rw-label">Username</span>
+              <span className="rw-field-wrap">
+                <span className="rw-field-icon" aria-hidden="true">
+                  @
+                </span>
+                <input className="rw-field" value={p.username ?? ''} onChange={(e) => set({ username: e.target.value.toLowerCase() })} placeholder="a–z, 0–9, _" />
+              </span>
+            </label>
+          </div>
+          <div className="cf-form__grid cf-form__grid--status">
+            <label className="cf-form__field">
+              <span className="rw-label">Status</span>
+              <input className="rw-field cf-center" value={p.statusEmoji ?? ''} onChange={(e) => set({ statusEmoji: e.target.value || null })} placeholder="🎵" aria-label="Status emoji" />
+            </label>
+            <label className="cf-form__field">
+              <span className="rw-label cf-invisible">Status text</span>
+              <input className="rw-field" value={p.statusText ?? ''} onChange={(e) => set({ statusText: e.target.value || null })} placeholder="What you’re up to" aria-label="Status text" />
+            </label>
+          </div>
+          <label className="cf-form__field">
+            <span className="rw-label">Bio</span>
+            <input className="rw-field" value={p.bio ?? ''} onChange={(e) => set({ bio: e.target.value || null })} placeholder="A line about you" />
+          </label>
+          <label className="cf-form__field">
+            <span className="rw-label">About</span>
+            <textarea className="rw-field" value={p.about ?? ''} onChange={(e) => set({ about: e.target.value || null })} placeholder="More about you" />
+          </label>
+          <label className="cf-form__field">
+            <span className="rw-label">Avatar URL</span>
+            <input className="rw-field" value={p.image ?? ''} onChange={(e) => set({ image: e.target.value || null })} placeholder="https://…" />
+            <span className="rw-hint">Set by Upload photo, or point at an external image.</span>
+          </label>
+          <div className="cf-actions-row">
+            <button type="submit" className="rw-btn rw-btn--primary" disabled={busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </Card>
+      {msg && <Banner tone="ok">{msg}</Banner>}
+      <ErrorText>{error}</ErrorText>
+    </>
   );
 }

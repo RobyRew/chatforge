@@ -1,10 +1,5 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-
-export interface MenuItem {
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}
+import { useRef, type ReactNode } from 'react';
+import { Menu, Sheet, type MenuEntry } from '../../ui/Sheet';
 
 /** Right-click (desktop) + long-press (touch) handlers to spread on an element; calls `onTrigger`
  *  with the pointer position. (The web has no force/3D-touch API — long-press is the equivalent.) */
@@ -37,45 +32,28 @@ export function useLongPress(onTrigger: (x: number, y: number) => void): {
   };
 }
 
-/** A small popover menu anchored at viewport coords; closes on outside-click or Escape. */
-export function ContextMenu({ x, y, items, header, onClose }: { x: number; y: number; items: MenuItem[]; header?: ReactNode; onClose: () => void }): ReactNode {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onEsc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [onClose]);
-
+/**
+ * A menu opened at a pointer position: a popover there on wide screens, a sheet from the bottom edge on narrow
+ * ones (chat-converter's menus behave the same). `header` sits above the items, e.g. quick reactions.
+ */
+export function ContextMenu({
+  x,
+  y,
+  label,
+  entries,
+  header,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  entries: MenuEntry[];
+  header?: ReactNode;
+  onClose: () => void;
+}): ReactNode {
   return (
-    <div
-      ref={ref}
-      className="fixed z-50 min-w-40 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 text-sm shadow-xl"
-      style={{ top: Math.min(y, window.innerHeight - 160), left: Math.min(x, window.innerWidth - 180) }}
-    >
-      {header}
-      <div className="py-1">
-        {items.map((it) => (
-          <button
-            key={it.label}
-            onClick={() => {
-              it.onClick();
-              onClose();
-            }}
-            className={`block w-full px-3 py-1.5 text-left hover:bg-zinc-800 ${it.danger ? 'text-rose-300' : 'text-zinc-200'}`}
-          >
-            {it.label}
-          </button>
-        ))}
-      </div>
-    </div>
+    <Sheet label={label} at={{ x, y }} width={256} onClose={onClose}>
+      <Menu label={label} entries={entries} header={header} onClose={onClose} />
+    </Sheet>
   );
 }
