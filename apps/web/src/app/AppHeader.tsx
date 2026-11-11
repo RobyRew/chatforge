@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { ADMIN_SECTIONS } from '../features/admin/registry';
 import { Avatar } from '../features/chat/Avatar';
 import { ACCOUNT_URL, signIn, signOut, useSession } from '../lib/authClient';
-import { setThemeMode, useThemeMode, type ThemeMode } from '../lib/theme';
+import { useThemePreference, type ThemePreference } from '../lib/theme';
 import { useMe } from '../lib/useMe';
 import { Icon, type IconName } from '../ui/Icon';
 import { Menu, Sheet } from '../ui/Sheet';
@@ -14,8 +14,8 @@ interface NavItem {
   icon: IconName;
 }
 
-const THEMES: Array<{ id: ThemeMode; label: string; short: string; icon: IconName }> = [
-  { id: 'auto', label: 'Match the system', short: 'Auto', icon: 'monitor' },
+const THEMES: Array<{ id: ThemePreference; label: string; short: string; icon: IconName }> = [
+  { id: 'system', label: 'Match the system', short: 'Auto', icon: 'monitor' },
   { id: 'light', label: 'Light', short: 'Light', icon: 'sun' },
   { id: 'dark', label: 'Dark', short: 'Dark', icon: 'moon' },
 ];
@@ -170,13 +170,16 @@ export function AppHeader(): ReactNode {
   );
 }
 
-/** Auto · Light · Dark, as on chat-converter.robyrew.com; the choice is shared with the converter element. */
+/**
+ * Auto · Light · Dark, as on chat-converter.robyrew.com; the choice is shared with the converter element. Clicks are
+ * handled by @robyrew/ui's initThemeControls() through `data-rw-theme-set` (see lib/theme.ts).
+ */
 function ThemeSwitch({ wide = false }: { wide?: boolean }): ReactNode {
-  const mode = useThemeMode();
+  const pref = useThemePreference();
   return (
     <div className={`cf-theme${wide ? ' cf-theme--wide' : ''}`} role="radiogroup" aria-label="Theme">
       {THEMES.map((t) => (
-        <button key={t.id} type="button" role="radio" aria-checked={mode === t.id} title={t.label} aria-label={wide ? undefined : t.label} onClick={() => setThemeMode(t.id)}>
+        <button key={t.id} type="button" role="radio" aria-checked={pref === t.id} data-rw-theme-set={t.id} title={t.label} aria-label={wide ? undefined : t.label}>
           <Icon name={t.icon} size={16} />
           {wide && <span>{t.short}</span>}
         </button>

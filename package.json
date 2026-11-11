@@ -24,9 +24,9 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "turbo": "^2.3.3",
+    "turbo": "^2.11.10",
     "typescript": "^7.0.2",
-    "vite": "^6.4.5",
+    "vite": "^8.3.8",
     "vitest": "^4.1.12"
   },
   "overrides": {

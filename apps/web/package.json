@@ -15,19 +15,20 @@
   "dependencies": {
     "@chatforge/crypto": "*",
     "@chatforge/types": "*",
-    "@robyrew/chat-converter": "github:RobyRew/chat-converter#v0.3.0",
-    "@tanstack/react-router": "^1.170.10",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@robyrew/chat-converter": "github:RobyRew/chat-converter#v0.3.1",
+    "@tanstack/react-router": "^1.170.46",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@robyrew/web-config": "github:RobyRew/web-config#v0.3.1",
-    "@tailwindcss/vite": "^4.0.0",
-    "@types/react": "^19.0.7",
-    "@types/react-dom": "^19.0.3",
-    "@vitejs/plugin-react": "^4.3.4",
-    "tailwindcss": "^4.0.0",
+    "@robyrew/ui": "github:RobyRew/ui#v0.4.0",
+    "@robyrew/web-config": "github:RobyRew/web-config#v0.4.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
-    "vite": "^6.4.5"
+    "vite": "^8.3.8"
   }
 }

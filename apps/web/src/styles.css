@@ -22,13 +22,15 @@
   --cf-sunken: color-mix(in oklab, var(--panel) 62%, var(--ground));
   --cf-raised: color-mix(in oklab, var(--panel) 88%, var(--ink) 12%);
   --cf-mine: color-mix(in oklab, var(--accent) 30%, var(--panel));
-  /* The accent darkened in the dark theme so white text on a primary button keeps its contrast (as the element does). */
-  --cf-primary: color-mix(in oklab, var(--accent) 76%, black);
   --cf-ok: #3ccf8a;
   --cf-warn: #f2ae45;
   --cf-error: var(--rw-danger);
   /* The coloured glow at the top of the page. */
   --cf-glow: color-mix(in oklab, var(--accent) 10%, transparent);
+  /* Fills of the controls on the header glass (active link, theme switch, account pill): the rim colour on the dark
+     glass. Since @robyrew/ui 0.4.0 the light glass is frosted white with dark ink and its rim is white, so the light
+     theme tints with the glass ink instead (below). */
+  --cf-glass-tint: rgb(var(--rim-rgb));
 }
 /* Dark theme without a blue cast (owner's call, 2026-11-09). Since @robyrew/ui 0.3.3 the house dark palette is
    neutral greys with the accent as its only hue (selection fills included), so ChatForge declares only its own
@@ -41,9 +43,10 @@
   --cf-sunken: color-mix(in oklab, var(--panel) 55%, var(--ground));
   --cf-raised: var(--panel);
   --cf-mine: color-mix(in oklab, var(--accent) 16%, var(--panel));
-  --cf-primary: var(--accent);
   --cf-ok: #13854d;
   --cf-warn: #a35f00;
+  /* Half-strength ink: the same percentages then land near the house's light fills (--rw-fill*: 4.5–11% black). */
+  --cf-glass-tint: color-mix(in srgb, var(--g-ink) 55%, transparent);
 }
 @media (min-width: 640px) {
   :root {
@@ -93,13 +96,6 @@ body {
     display: block;
   }
 
-  /* Primary fill: see --cf-primary. */
-  .rw-btn--primary {
-    background: var(--cf-primary);
-  }
-  .rw-btn--primary:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--cf-primary) 88%, white);
-  }
   .rw-btn {
     text-decoration: none;
   }
@@ -383,11 +379,6 @@ body {
     z-index: 40;
     padding: 0.6rem var(--gutter) 0;
   }
-  /* Obsidian keeps its smoked glass in the light theme; a denser fill keeps the bar's ink readable over a light page. */
-  :root[data-theme='light'] .cf-bar,
-  :root[data-theme='light'] .cf-drop {
-    --t-alpha: 0.86;
-  }
   .cf-bar {
     --r: 18px;
     display: flex;
@@ -446,7 +437,7 @@ body {
   }
   .cf-link[data-status='active'] {
     color: var(--g-ink);
-    background: rgb(var(--rim-rgb) / 0.16);
+    background: color-mix(in srgb, var(--cf-glass-tint) 16%, transparent);
   }
   .cf-head-actions {
     display: flex;
@@ -459,7 +450,7 @@ body {
     gap: 2px;
     padding: 3px;
     border-radius: 999px;
-    background: rgb(var(--rim-rgb) / 0.08);
+    background: color-mix(in srgb, var(--cf-glass-tint) 8%, transparent);
   }
   .cf-theme button {
     display: inline-flex;
@@ -482,7 +473,7 @@ body {
   }
   .cf-theme button[aria-checked='true'] {
     color: var(--g-ink);
-    background: rgb(var(--rim-rgb) / 0.2);
+    background: color-mix(in srgb, var(--cf-glass-tint) 20%, transparent);
   }
   .cf-theme--wide {
     display: grid;
@@ -501,8 +492,8 @@ body {
     gap: 0.4rem;
     border: 0;
     border-radius: 999px;
-    background: rgb(var(--rim-rgb) / 0.16);
-    box-shadow: inset 0 0 0 1px rgb(var(--rim-rgb) / 0.18);
+    background: color-mix(in srgb, var(--cf-glass-tint) 16%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cf-glass-tint) 18%, transparent);
     color: var(--g-ink);
     font: 700 0.82rem/1 var(--g-font);
     cursor: pointer;
@@ -517,7 +508,7 @@ body {
   }
   .cf-signin:hover,
   .cf-account:hover {
-    background: rgb(var(--rim-rgb) / 0.24);
+    background: color-mix(in srgb, var(--cf-glass-tint) 24%, transparent);
   }
   .cf-account__name {
     overflow: hidden;
@@ -534,7 +525,7 @@ body {
     height: 40px;
     border: 0;
     border-radius: 12px;
-    background: rgb(var(--rim-rgb) / 0.12);
+    background: color-mix(in srgb, var(--cf-glass-tint) 12%, transparent);
     color: var(--g-ink);
     cursor: pointer;
   }
@@ -569,14 +560,14 @@ body {
   }
   .cf-drop__link:hover,
   .cf-drop__link[data-status='active'] {
-    background: rgb(var(--rim-rgb) / 0.14);
+    background: color-mix(in srgb, var(--cf-glass-tint) 14%, transparent);
   }
   .cf-drop__theme {
     display: grid;
     gap: 0.5rem;
     margin-top: 0.4rem;
     padding: 0.75rem 0.85rem 0.5rem;
-    border-top: 1px solid rgb(var(--rim-rgb) / 0.14);
+    border-top: 1px solid color-mix(in srgb, var(--cf-glass-tint) 14%, transparent);
     color: var(--g-ink-dim);
     font-size: 0.78rem;
     font-weight: 700;
@@ -2073,8 +2064,9 @@ body {
     height: 40px;
     border: 0;
     border-radius: 999px;
-    background: var(--cf-primary);
-    color: #fff;
+    /* The house primary fill: the accent with --on-accent ink, as @robyrew/ui's .rw-btn--primary. */
+    background: var(--accent);
+    color: var(--on-accent);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.2),
       var(--rw-e1);
@@ -2085,7 +2077,7 @@ body {
       opacity 0.15s;
   }
   .cf-send:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--cf-primary) 88%, white);
+    background: color-mix(in oklab, var(--accent) 88%, var(--ink));
   }
   .cf-send:active:not(:disabled) {
     transform: scale(0.94);
@@ -2231,7 +2223,7 @@ body {
   }
   .cf-settings__link[aria-current='page'] .cf-tile {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .cf-settings__cards {
     display: grid;

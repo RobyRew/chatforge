@@ -1,57 +1,25 @@
+import { getThemePreference, initThemeControls, type ThemePreference } from '@robyrew/ui/theme.js';
 import { useEffect, useState } from 'react';
 
 /**
- * Light / dark / follow the system. The house theme bootstrap (@robyrew/web-config/theme-bootstrap, loaded before
- * the first paint) reads `localStorage.theme` and stamps `data-theme` on <html>; this keeps that stamp and the
- * stored choice in step when the person switches. "auto" stores nothing, so the bootstrap follows the system.
- * `<chat-converter-app>` turns light under `data-theme="light"` only, so it follows the same stamp.
+ * Light / dark / follow the system, on the house theme runtime (@robyrew/ui/theme.js). The pre-paint bootstrap
+ * (served as a file by vite.config.ts) stamps `data-theme` on <html> from `localStorage.theme`; buttons marked
+ * `data-rw-theme-set="system|light|dark"` are bound by `initThemeControls()` (delegated click, stores the choice,
+ * follows the OS while "system", reflects `aria-checked` on role=radio). `<chat-converter-app>` turns light under
+ * `data-theme="light"` only, so it follows the same stamp.
+ *
+ * React keeps its own copy of the preference from the `rw:themechange` event, so a switch that mounts later (the
+ * phone menu) renders the current choice instead of waiting for the runtime to reflect it.
  */
-export type ThemeMode = 'auto' | 'light' | 'dark';
+export type { ThemePreference };
 
-const KEY = 'theme';
-const media = (): MediaQueryList => window.matchMedia('(prefers-color-scheme: dark)');
-
-function stored(): ThemeMode {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v === 'light' || v === 'dark' ? v : 'auto';
-  } catch {
-    return 'auto';
-  }
-}
-
-function stamp(mode: ThemeMode): void {
-  const dark = mode === 'dark' || (mode === 'auto' && media().matches);
-  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-}
-
-const listeners = new Set<(mode: ThemeMode) => void>();
-
-export function setThemeMode(mode: ThemeMode): void {
-  try {
-    if (mode === 'auto') localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, mode);
-  } catch {
-    /* storage unavailable: the choice lasts for this page */
-  }
-  stamp(mode);
-  for (const cb of listeners) cb(mode);
-}
-
-/** The current mode, shared by every switch on the page; "auto" follows a system change while the page is open. */
-export function useThemeMode(): ThemeMode {
-  const [mode, setMode] = useState<ThemeMode>(stored);
+export function useThemePreference(): ThemePreference {
+  const [pref, setPref] = useState<ThemePreference>(getThemePreference);
   useEffect(() => {
-    listeners.add(setMode);
-    const mq = media();
-    const onSystem = (): void => {
-      if (stored() === 'auto') stamp('auto');
-    };
-    mq.addEventListener('change', onSystem);
-    return () => {
-      listeners.delete(setMode);
-      mq.removeEventListener('change', onSystem);
-    };
+    initThemeControls();
+    const onChange = (e: DocumentEventMap['rw:themechange']): void => setPref(e.detail.preference);
+    document.addEventListener('rw:themechange', onChange);
+    return () => document.removeEventListener('rw:themechange', onChange);
   }, []);
-  return mode;
+  return pref;
 }
