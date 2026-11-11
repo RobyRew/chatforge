@@ -30,26 +30,10 @@
   /* The coloured glow at the top of the page. */
   --cf-glow: color-mix(in oklab, var(--accent) 10%, transparent);
 }
-/* Dark theme without a blue cast (owner's call, 2026-11-09). The house Obsidian dark palette is blue-tinted
-   near-blacks with blue-grey ink, hairlines and glass; ChatForge declares neutral greys in their place. These
-   are unlayered, so they win over the house tokens (imported into the components layer), and
-   <chat-converter-app> reads the same tokens. The accent itself stays for buttons, links, focus rings and
-   switches; tinted fills built from it (selection, own bubbles, the page glow) are neutral. */
+/* Dark theme without a blue cast (owner's call, 2026-11-09). Since @robyrew/ui 0.3.3 the house dark palette is
+   neutral greys with the accent as its only hue (selection fills included), so ChatForge declares only its own
+   fills that would otherwise mix the accent in: own bubbles and the page glow. */
 :root[data-theme='dark'] {
-  --ground: #090909;
-  --ground-2: #0f0f0f;
-  --panel: #131313;
-  --hair: #252525;
-  --hair-soft: #1a1a1a;
-  --ink: #ededed;
-  --ink-2: #a3a3a3;
-  --ink-3: #737373;
-  --accent-soft: rgb(255 255 255 / 0.08);
-  --glass-rgb: 30 30 30;
-  --rim-rgb: 214 214 214;
-  --g-ink: #f5f5f5;
-  --g-ink-dim: #a8a8a8;
-  --g-ink-mute: #7a7a7a;
   --cf-mine: color-mix(in oklab, var(--panel) 74%, var(--ink) 26%);
   --cf-glow: transparent;
 }

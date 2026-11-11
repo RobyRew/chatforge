@@ -590,6 +590,12 @@ and so on chat-converter.robyrew.com, is still the blue-tinted Obsidian; ChatFor
 `styles.css`. `--cc-mine` is internal to the element, so a rename there would bring back accent-tinted own bubbles
 in the converter preview.
 **Status:** Accepted.
+**Amended 2026-11-11:** `@robyrew/web-config` is pinned at v0.3.1, which pins `@robyrew/ui` v0.3.3, whose dark
+palette is the neutral greys ChatForge had declared (ui `935edcc`). `styles.css` no longer re-declares the house
+tokens; its dark block keeps `--cf-mine` and `--cf-glow`, ChatForge's own fills that would otherwise mix in the
+accent. With ui 0.3.3 the glass material is neutral in the light theme too, since its light blocks never set the
+material. Re-locking needed the old `@robyrew/ui` entry removed from `package-lock.json` first: npm kept the v0.3.2
+checkout as satisfying web-config's new `#v0.3.3` spec and installed web-config once more under `apps/web`.
 
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
@@ -648,4 +654,5 @@ against (2026-06-01):
 - [x] **Converter from @robyrew/chat-converter (ADR-0031)** — `packages/core` and the model files removed; `@chatforge/{types,web,api}` pin `github:RobyRew/chat-converter#v0.1.1`; the converter page hosts `<chat-converter-app>` with Save to Vault in its actions slot; Docker build stages install git; daily `bump-chat-converter.yml` moves the pin and dispatches the image build.
 - [x] **Node 26 + TypeScript 7 (ADR-0032)** — workflows, Dockerfiles, `.nvmrc`, `engines` and the esbuild target on Node 26; `typescript` ^7.0.2 and `@types/node` ^26.6.6; `outDir` removed from the API's no-emit tsconfig.
 - [x] **Redesign in chat-converter's design language (ADR-0033)** — `@robyrew/web-config` theme, chat-converter v0.3.0 and its icons; `src/ui/` (sheets, menus, segmented controls, cards); glass header with Auto · Light · Dark; chat as a container-query app frame; neutral dark theme; theme bootstrap served as a file under the CSP.
+- [x] **House tokens from @robyrew/ui 0.3.3 (ADR-0033, amended 2026-11-11)** — `@robyrew/web-config` v0.3.1; the dark block in `styles.css` keeps only ChatForge's own fills (`--cf-mine`, `--cf-glow`).
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).
