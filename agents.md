@@ -596,6 +596,19 @@ tokens; its dark block keeps `--cf-mine` and `--cf-glow`, ChatForge's own fills 
 accent. With ui 0.3.3 the glass material is neutral in the light theme too, since its light blocks never set the
 material. Re-locking needed the old `@robyrew/ui` entry removed from `package-lock.json` first: npm kept the v0.3.2
 checkout as satisfying web-config's new `#v0.3.3` spec and installed web-config once more under `apps/web`.
+**Amended again 2026-11-11 (ui 0.4.0, Vite 8):** `@robyrew/web-config` v0.4.0 (`@robyrew/ui` v0.4.0, also a direct
+dependency of `@chatforge/web`, which now imports `@robyrew/ui/theme.js`), `@robyrew/chat-converter` v0.3.1, Vite 8
+with `@vitejs/plugin-react` 6 (amends ADR-0002's toolchain: Vite 8 bundles with Rolldown, so Rollup left the lockfile).
+- The theme store in `lib/theme.ts` is the house runtime: `initThemeControls()` binds the header's
+  `data-rw-theme-set="system|light|dark"` buttons (the old id `auto` is `system`), React follows its
+  `rw:themechange` event, and the pre-paint bootstrap is still served as a hashed file (CSP `script-src 'self'`).
+- Production on the `3f92cce` images showed a dark header bar on light pages: the light-theme `--t-alpha: .86` on
+  `.cf-bar`/`.cf-drop` kept the old smoked glass, which ui 0.4.0 replaces with a frosted light glass. The override is
+  removed; header control fills mix `--cf-glass-tint` (the rim colour in the dark theme, half-strength `--g-ink` in
+  the light one) because white `--rim-rgb` disappears on white glass.
+- `--cf-primary` and the `.rw-btn--primary` override are removed: ui 0.4.0 labels accent fills with `--on-accent`
+  (dark ink in the dark theme). `.cf-send` and the active settings tile use `--accent` + `--on-accent`, and the
+  element's `--cc-primary` / `--cc-on-primary` map to the same pair, as chat-converter.robyrew.com maps them.
 
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
@@ -655,4 +668,5 @@ against (2026-06-01):
 - [x] **Node 26 + TypeScript 7 (ADR-0032)** — workflows, Dockerfiles, `.nvmrc`, `engines` and the esbuild target on Node 26; `typescript` ^7.0.2 and `@types/node` ^26.6.6; `outDir` removed from the API's no-emit tsconfig.
 - [x] **Redesign in chat-converter's design language (ADR-0033)** — `@robyrew/web-config` theme, chat-converter v0.3.0 and its icons; `src/ui/` (sheets, menus, segmented controls, cards); glass header with Auto · Light · Dark; chat as a container-query app frame; neutral dark theme; theme bootstrap served as a file under the CSP.
 - [x] **House tokens from @robyrew/ui 0.3.3 (ADR-0033, amended 2026-11-11)** — `@robyrew/web-config` v0.3.1; the dark block in `styles.css` keeps only ChatForge's own fills (`--cf-mine`, `--cf-glow`).
+- [x] **ui 0.4.0, Vite 8, chat-converter 0.3.1 (ADR-0033, amended again 2026-11-11)** — the house theme runtime drives the Auto · Light · Dark switch; light glass without the old dark-bar override; accent fills labelled with `--on-accent`, the converter element's buttons included.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).

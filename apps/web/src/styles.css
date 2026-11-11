@@ -2588,6 +2588,10 @@ body {
 
 .cf-app-host chat-converter-app {
   --cc-app-h: var(--cf-frame-h);
+  /* The house accent fill and its label colour (ui >= 0.4), as chat-converter.robyrew.com maps them, so the
+     element's primary buttons match ChatForge's own (.cf-send, .rw-btn--primary). */
+  --cc-primary: var(--accent);
+  --cc-on-primary: var(--on-accent);
 }
 /* Own bubbles in the element's chat preview follow ChatForge's: neutral in the dark theme. */
 :root[data-theme='dark'] .cf-app-host chat-converter-app {
