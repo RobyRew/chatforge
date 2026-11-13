@@ -1,6 +1,6 @@
 import type { ChatMessageDTO, ContactDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
 import { stores } from '../stores';
-import type { ChatRepo } from './repo';
+import type { ChatRepo, ListMessagesOptions } from './repo';
 
 /** In-memory ChatRepo for tests/dev — lets the WS transport run in-process without Postgres. */
 export class MemoryChatRepo implements ChatRepo {
@@ -89,10 +89,13 @@ export class MemoryChatRepo implements ChatRepo {
     return msg;
   }
 
-  async listMessages(conversationId: string, opts: { beforeSeq?: number; limit?: number } = {}): Promise<ChatMessageDTO[]> {
+  async listMessages(conversationId: string, opts: ListMessagesOptions = {}): Promise<ChatMessageDTO[]> {
+    const { afterSeq, beforeSeq, limit = 50 } = opts;
     let arr = this.msgs.get(conversationId) ?? [];
-    if (opts.beforeSeq != null) arr = arr.filter((m) => m.seq < opts.beforeSeq!);
-    return arr.slice(-(opts.limit ?? 50));
+    if (afterSeq != null) arr = arr.filter((m) => m.seq > afterSeq);
+    if (beforeSeq != null) arr = arr.filter((m) => m.seq < beforeSeq);
+    // Same contract as the Drizzle repo: the oldest page after `afterSeq`, else the newest `limit`.
+    return afterSeq != null ? arr.slice(0, limit) : arr.slice(-limit);
   }
 
   async setLastRead(conversationId: string, userId: string, seq: number): Promise<void> {
@@ -119,6 +122,12 @@ export class MemoryChatRepo implements ChatRepo {
 
   async countKeyPackages(userId: string): Promise<number> {
     return this.kps.get(userId)?.length ?? 0;
+  }
+
+  async withdrawKeyPackages(userId: string): Promise<number> {
+    const n = this.kps.get(userId)?.length ?? 0;
+    this.kps.delete(userId);
+    return n;
   }
 
   async storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }> {

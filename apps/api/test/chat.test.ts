@@ -256,3 +256,57 @@ describe('MLS bootstrap + E2E over the gateway (CH-3)', () => {
     expect((await rest('/api/chat/keypackages/claim', 'POST', { userId: A }, 'user-token')).status).toBe(409);
   });
 });
+
+describe('message history paging (afterSeq)', () => {
+  const json = async <T,>(res: Response): Promise<T> => (await res.json()) as T;
+  const seqs = (ms: Array<{ seq: number }>): number[] => ms.map((m) => m.seq);
+  const page = async (id: string, query: string): Promise<Response> =>
+    rest(`/api/chat/conversations/${id}/messages${query}`, 'GET', undefined, 'user-token');
+
+  it('pages forward from a cursor, oldest first, and still returns the newest page without one', async () => {
+    const { id } = await repo.createGroup(A, 'paging', [B]);
+    for (let i = 1; i <= 5; i++) await repo.appendMessage(id, A, `c${i}`);
+
+    const first = await json<{ messages: Array<{ seq: number }> }>(await page(id, '?afterSeq=2&limit=2'));
+    expect(seqs(first.messages)).toEqual([3, 4]);
+    expect(seqs((await json<{ messages: Array<{ seq: number }> }>(await page(id, '?afterSeq=4&limit=2'))).messages)).toEqual([5]);
+    expect(seqs((await json<{ messages: Array<{ seq: number }> }>(await page(id, '?afterSeq=5'))).messages)).toEqual([]);
+
+    expect(seqs((await json<{ messages: Array<{ seq: number }> }>(await page(id, ''))).messages)).toEqual([1, 2, 3, 4, 5]);
+    expect(seqs((await json<{ messages: Array<{ seq: number }> }>(await page(id, '?limit=2'))).messages)).toEqual([4, 5]);
+    expect(seqs((await json<{ messages: Array<{ seq: number }> }>(await page(id, '?beforeSeq=3'))).messages)).toEqual([1, 2]);
+  });
+
+  it('clamps limit to 200 and rejects malformed numbers', async () => {
+    const { id } = await repo.createGroup(A, 'clamp', [B]);
+    for (let i = 1; i <= 205; i++) await repo.appendMessage(id, A, `m${i}`);
+
+    const all = await json<{ messages: Array<{ seq: number }> }>(await page(id, '?afterSeq=0&limit=100000'));
+    expect(all.messages).toHaveLength(200);
+    expect(all.messages[0]!.seq).toBe(1);
+    expect(all.messages[199]!.seq).toBe(200);
+
+    for (const bad of ['?limit=abc', '?afterSeq=-1', '?afterSeq=1.5', '?beforeSeq=1e3', '?afterSeq=99999999999']) {
+      expect((await page(id, bad)).status).toBe(400);
+    }
+  });
+});
+
+describe('withdrawing KeyPackages (a browser deleting its chat data)', () => {
+  const json = async <T,>(res: Response): Promise<T> => (await res.json()) as T;
+
+  it("deletes only the caller's unclaimed KeyPackages", async () => {
+    const mine = await rest('/api/chat/keypackages', 'POST', { deviceId: 'web', keyPackages: ['a2V5MQ==', 'a2V5Mg=='] }, 'user-token');
+    expect(mine.status).toBe(200);
+    await rest('/api/chat/keypackages', 'POST', { deviceId: 'web', keyPackages: ['b3duZXI='] }, 'owner-token');
+
+    const res = await rest('/api/chat/keypackages', 'DELETE', undefined, 'user-token');
+    expect(res.status).toBe(200);
+    expect((await json<{ withdrawn: number }>(res)).withdrawn).toBe(2);
+    expect((await json<{ count: number }>(await rest('/api/chat/keypackages', 'GET', undefined, 'user-token'))).count).toBe(0);
+    expect((await json<{ count: number }>(await rest('/api/chat/keypackages', 'GET', undefined, 'owner-token'))).count).toBe(1);
+
+    // Leave the shared repo as the other tests expect it: no KeyPackage for the owner.
+    await rest('/api/chat/keypackages', 'DELETE', undefined, 'owner-token');
+  });
+});

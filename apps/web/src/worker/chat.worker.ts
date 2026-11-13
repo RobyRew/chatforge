@@ -6,7 +6,7 @@
  */
 import { createMlsProvider, type MlsProvider } from '@chatforge/crypto/mls';
 import { safetyNumber } from '@chatforge/crypto/safety-number';
-import { addBundle, allBundles, deleteBundle, getGroup, putGroup } from '../lib/chatDb';
+import { addBundle, allBundles, deleteBundle, getGroup, putGroup, setChatDbUser } from '../lib/chatDb';
 import type { ChatWorkerRequest, ChatWorkerResponse } from '../lib/chatProtocol';
 
 const enc = new TextEncoder();
@@ -36,6 +36,7 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
   switch (req.type) {
     case 'init': {
       userId = req.userId;
+      setChatDbUser(userId); // this account's database, never another account's (ADR-0034)
       return {};
     }
     case 'generateKeyPackages': {
@@ -46,6 +47,10 @@ async function handle(req: ChatWorkerRequest): Promise<unknown> {
         published.push(toB64(kp.publicPackage));
       }
       return { published };
+    }
+    case 'bundleCount': {
+      // How many unused KeyPackage private halves this browser holds for the account.
+      return { count: (await allBundles()).length };
     }
     case 'startDm': {
       const self = await m.generateKeyPackage(enc.encode(userId));

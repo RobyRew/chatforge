@@ -2,7 +2,8 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ADMIN_SECTIONS } from '../features/admin/registry';
 import { Avatar } from '../features/chat/Avatar';
-import { ACCOUNT_URL, signIn, signOut, useSession } from '../lib/authClient';
+import { SignOutSheet } from '../features/auth/SignOutSheet';
+import { ACCOUNT_URL, signIn, useSession } from '../lib/authClient';
 import { useThemePreference, type ThemePreference } from '../lib/theme';
 import { useMe } from '../lib/useMe';
 import { Icon, type IconName } from '../ui/Icon';
@@ -42,6 +43,7 @@ export function AppHeader(): ReactNode {
   const head = useRef<HTMLElement>(null);
   const bar = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useLayoutEffect(() => {
@@ -105,7 +107,7 @@ export function AppHeader(): ReactNode {
         <div className="cf-head-actions">
           <ThemeSwitch />
           {data ? (
-            <AccountButton email={data.user.email} name={me?.name || data.user.name} />
+            <AccountButton email={data.user.email} name={me?.name || data.user.name} onSignOut={() => setSigningOut(true)} />
           ) : (
             <button type="button" className="cf-signin" onClick={() => signIn()}>
               <Icon name="contact" size={16} />
@@ -145,7 +147,14 @@ export function AppHeader(): ReactNode {
                   </Link>
                 </li>
                 <li>
-                  <button type="button" className="cf-drop__link" onClick={() => signOut()}>
+                  <button
+                    type="button"
+                    className="cf-drop__link"
+                    onClick={() => {
+                      setOpen(false);
+                      setSigningOut(true);
+                    }}
+                  >
                     <Icon name="logOut" size={19} />
                     Sign out
                   </button>
@@ -166,6 +175,7 @@ export function AppHeader(): ReactNode {
           </div>
         </div>
       )}
+      {signingOut && data && <SignOutSheet userId={data.user.id} onClose={() => setSigningOut(false)} />}
     </header>
   );
 }
@@ -189,7 +199,7 @@ function ThemeSwitch({ wide = false }: { wide?: boolean }): ReactNode {
 }
 
 /** The signed-in person: their initials (or photo) and name, opening Account, Settings and Sign out. */
-function AccountButton({ email, name }: { email: string; name?: string }): ReactNode {
+function AccountButton({ email, name, onSignOut }: { email: string; name?: string; onSignOut: () => void }): ReactNode {
   const navigate = useNavigate();
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState(false);
@@ -220,7 +230,7 @@ function AccountButton({ email, name }: { email: string; name?: string }): React
               { label: 'Settings', icon: 'sliders', onSelect: () => void navigate({ to: '/settings' }) },
               { label: 'Manage account security', icon: 'external', hint: 'Password, passkeys, 2FA', onSelect: () => window.open(ACCOUNT_URL, '_blank', 'noopener') },
               'separator',
-              { label: 'Sign out', icon: 'logOut', danger: true, onSelect: () => signOut() },
+              { label: 'Sign out', icon: 'logOut', danger: true, onSelect: onSignOut },
             ]}
           />
         </Sheet>

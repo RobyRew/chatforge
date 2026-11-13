@@ -34,19 +34,11 @@ describe('api', () => {
     expect(((await res.json()) as { openapi: string }).openapi).toBe('3.0.0');
   });
 
-  it('rejects unauthenticated server-side conversion', async () => {
-    const res = await post('/api/convert', { fileName: 'x.txt', contentBase64: '', target: 'json' });
-    expect(res.status).toBe(401);
-  });
-
-  it('runs server-side conversion for an authorized user (hybrid path)', async () => {
+  it('has no server-side conversion endpoint (ADR-0034)', async () => {
     const wa = '[12/03/2025, 10:45:30] Alice: hello there\n';
     const contentBase64 = Buffer.from(wa).toString('base64');
     const res = await post('/api/convert', { fileName: 'chat.txt', contentBase64, target: 'telegram-json' }, 'user-token');
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as { detectedPlatform: string; artifactBase64: string };
-    expect(data.detectedPlatform).toBe('whatsapp');
-    expect(data.artifactBase64.length).toBeGreaterThan(0);
+    expect(res.status).toBe(404);
   });
 
   it('enforces RBAC on the audit log', async () => {

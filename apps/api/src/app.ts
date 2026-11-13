@@ -8,7 +8,6 @@ import { authModule } from './modules/auth';
 import { blobsModule } from './modules/blobs';
 import { chatModule } from './modules/chat';
 import { conversionsModule } from './modules/conversions';
-import { convertModule } from './modules/convert';
 import { integrationsModule } from './modules/integrations';
 import { vaultModule } from './modules/vault';
 
@@ -47,7 +46,7 @@ export function createApp(): OpenAPIHono<Vars> {
   // All app API routes live under /api/* so the web SPA + API can share one origin
   // (Traefik path-routes /api + /ws to the API; the web nginx proxies the same in compose).
   app.route('/api/me', accountModule); // session user, password, profile, passkeys
-  app.route('/api/convert', convertModule);
+  // No /api/convert: conversion runs only in the browser since ADR-0034 retired the server sandbox.
   app.route('/api/conversions', conversionsModule);
   app.route('/api/vault', vaultModule); // saved imported chats (E2E ciphertext only)
   app.route('/api/blobs', blobsModule); // encrypted chat attachments + avatars (object storage)

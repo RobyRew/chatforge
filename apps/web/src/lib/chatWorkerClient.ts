@@ -27,8 +27,16 @@ function call<T>(req: ChatWorkerRequest): Promise<T> {
 const rid = (): string => crypto.randomUUID();
 
 export const chatWorker = {
+  /** Stop the worker (closing its database connection); pending calls reject. The next call starts a new one. */
+  terminate: (): void => {
+    worker?.terminate();
+    worker = null;
+    for (const p of pending.values()) p.reject(new Error('chat worker stopped'));
+    pending.clear();
+  },
   init: (userId: string): Promise<unknown> => call({ id: rid(), type: 'init', userId }),
   generateKeyPackages: (count: number): Promise<{ published: string[] }> => call({ id: rid(), type: 'generateKeyPackages', count }),
+  bundleCount: (): Promise<{ count: number }> => call({ id: rid(), type: 'bundleCount' }),
   startDm: (conversationId: string, peerKeyPackage: string): Promise<{ welcome: string }> =>
     call({ id: rid(), type: 'startDm', conversationId, peerKeyPackage }),
   join: (conversationId: string, welcome: string): Promise<{ joined: boolean }> =>

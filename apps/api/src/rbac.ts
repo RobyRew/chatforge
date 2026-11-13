@@ -18,7 +18,8 @@ export const PERMISSIONS = [
   'permissions:grant', // grant or deny individual permissions to a user (delegation)
   'flags:write', // toggle feature flags
   'audit:read', // read the audit log
-  'convert:server', // run the opt-in server-side conversion sandbox
+  // 'convert:server' was removed with the server sandbox (ADR-0034). Stored roles and grants that still
+  // name it are filtered by isPermission when read, so they need no migration.
   'conversions:read', // read conversion history metadata
   'conversions:write', // save conversion history metadata
   'chat:use', // use the live chat
@@ -53,13 +54,12 @@ const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     'permissions:grant',
     'flags:write',
     'audit:read',
-    'convert:server',
     'conversions:read',
     'conversions:write',
     'chat:use',
   ],
   moderator: ['users:read', 'audit:read', 'conversions:read', 'chat:use'],
-  user: ['convert:server', 'conversions:read', 'conversions:write', 'chat:use'],
+  user: ['conversions:read', 'conversions:write', 'chat:use'],
 };
 
 /** Seed data for the `roles` table; also the fallback when the DB isn't reachable. */

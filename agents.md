@@ -12,10 +12,9 @@ access-control panel, real-time E2E chat, and native apps. Greenfield rewrite of
 `chat-converter` (vanilla-JS, WhatsApp⇄Telegram only).
 
 ## Core principles
-1. **Privacy-first / hybrid** — conversion runs **client-side by default**; plaintext stays in
-   the browser. Large files may **opt in** to an **ephemeral server sandbox** (tmpfs, zeroized,
-   never persisted in plaintext, audit-logged). Stored data is **always E2E-encrypted blobs**;
-   not even an admin can decrypt. "Admin access" = RBAC over accounts/features/moderation.
+1. **Privacy-first** — conversion runs **client-side**; plaintext stays in the browser. (The opt-in
+   ephemeral server sandbox of ADR-0001/ADR-0011 was removed in ADR-0034.) Stored data is
+   **always E2E-encrypted blobs**; not even an admin can decrypt. "Admin access" = RBAC over accounts/features/moderation.
 2. **Lossless** — a rich canonical model is the single intermediate representation. Nothing is
    silently dropped: unmodeled data is preserved in `raw`, and every conversion emits a
    **fidelity report** (preserved / approximated / dropped).
@@ -24,7 +23,8 @@ access-control panel, real-time E2E chat, and native apps. Greenfield rewrite of
 4. **API-first** — web is a pure SPA against a typed API; native apps (later) reuse the same
    API + OpenAPI spec + canonical schema.
 5. **Isomorphic core** — the conversion engine runs unchanged in the browser (Web Worker) and in
-   Node (server sandbox). No DOM/Node-only assumptions in core. Since ADR-0031 the engine is
+   Node (chat-converter's CLI and tests; ChatForge's API stopped running it in ADR-0034). No
+   DOM/Node-only assumptions in core. Since ADR-0031 the engine is
    `@robyrew/chat-converter` (RobyRew/chat-converter), installed by git tag.
 
 ## Repository layout
@@ -610,6 +610,83 @@ with `@vitejs/plugin-react` 6 (amends ADR-0002's toolchain: Vite 8 bundles with 
   (dark ink in the dark theme). `.cf-send` and the active settings tile use `--accent` + `--on-accent`, and the
   element's `--cc-primary` / `--cc-on-primary` map to the same pair, as chat-converter.robyrew.com maps them.
 
+## ADR-0034 — Catch-up from the cursor, an outbox, one local database per account; no server-side conversion (2026-11-12) · Accepted
+
+**Context:** A review of the chat client on 2026-11-12 found four problems.
+- **History.** On start the client fetched the newest 100 messages and skipped those at or below its cursor,
+  so a device away for more than 100 messages never fetched the rows in between; the run also stopped at
+  the first message it could not decrypt. A WebSocket reconnect re-sent `sub` and fetched nothing. Groups
+  hit the stop on a member's first load: the commits sent before they joined are in their stream and can
+  never decrypt for them.
+- **Sending.** `wsSend` dropped any frame while the socket was not open. A message typed during a reconnect
+  stayed "Sending"; a group commit sent then was lost, leaving the committer an epoch ahead of everyone
+  else. The gateway also handles each frame in its own async task, so two frames sent back to back could be
+  stored in either order.
+- **Local storage.** Every account signed in on a browser shared one IndexedDB database, `chatforge-chat`:
+  decrypted messages, MLS group state and KeyPackage private halves. A second account's worker tried the
+  first one's bundles, and signing out left all of it on disk.
+- **`POST /api/convert`.** Every signed-in user held `convert:server`, no web code called the route, its
+  on/off flag lived in the in-memory dev store seeded `true` (the admin console's flags could not turn it
+  off), and it decoded up to 32 MB of base64 into an API capped at 112 MB of heap. The README still offered
+  it as the opt-in path for large files.
+
+**Decision:**
+- **Catch-up from the cursor.** `GET /api/chat/conversations/:id/messages` takes `afterSeq` (the oldest
+  messages after it, oldest first); `afterSeq`, `beforeSeq` and `limit` must be integers, and `limit` is
+  clamped to 1..200. The client pages forward from its cursor on start, after every WebSocket (re)connect,
+  and when a live frame's `seq` is not cursor + 1. Each conversation's ingest runs on one promise chain, so
+  live frames and catch-ups never interleave.
+- **A failed decrypt no longer stops the run.** The cursor still advances only on success. A message that
+  fails is passed over once a later message decrypts (it was not needed for that one: a pre-join commit, a
+  frame stored twice) and retried by the next catch-up while nothing after it decrypts (a commit this
+  device could not apply yet). Pending Welcomes are re-checked once per run, not once per failure.
+- **An outbox.** Every encrypted frame — message, reaction, commit — is written to an IndexedDB `outbox`
+  store before sending and stays until the server's `delivered`. One frame is on the wire at a time, which
+  keeps the stored order equal to the encryption order without changing the gateway. Before anything is
+  sent on a new socket, the catch-up settles frames already on the server by matching the account's own
+  messages against the outbox ciphertext instead of resending them (no server-side idempotency key). A
+  frame stored after that read, or sent by a second tab too, can still be stored twice; receivers pass over
+  the second copy. A frame with no `delivered` after 15 s gets the same check, then is sent again; a 403 or
+  404 on the check (the account left the conversation) drops it, and so does leaving a group. The queue is
+  replayed in enqueue order after a reload. Messages and reactions give up after 5 sends: a message stays as **Not sent** with Retry
+  (encrypted afresh, under a new client id) and Delete; a reaction is dropped. Commits are retried without a
+  limit. An add commit is queued as soon as the worker returns it, before the Welcome is relayed (relayed
+  with up to three attempts), so frames encrypted after it queue behind it and a failed relay leaves out
+  only the new member. Removing a group member waits up to 20 s for its commit to be stored before the
+  roster changes (ADR-0027's order); on timeout the commit stays queued and the removal reports it, and a
+  repeat while a commit is still queued is refused. Queued messages come back as pending bubbles after a
+  reload.
+- **One database per account**, `chatforge-chat:<userId>`, selected in both realms (`setChatDbUser`; the
+  worker in `init`). On an account's first start its records move out of the shared database: the
+  conversations the server lists for it, plus any conversation holding a message it sent. KeyPackage
+  bundles are copied — no owner is readable outside MLS, and another account's bundle cannot open this
+  account's Welcomes. The shared database is deleted once no conversation records remain in it. On each
+  start, a browser holding no bundles while the server lists KeyPackages for the account withdraws those
+  and publishes a fresh set (bundles lost with the shared database, or a failed withdrawal at sign-out).
+  Connections close on `versionchange`, and a realm that saw its database deleted does not reopen it.
+- **Sign-out can delete this browser's chat data.** Opt-in, off by default, in a sign-out sheet: the MLS
+  state exists only on the device, so deleting it leaves the account's existing chats unreadable there.
+  Deleting also withdraws the account's unclaimed KeyPackages (`DELETE /api/chat/keypackages`), since their
+  private halves go with it, and removes the account's records and every bundle from the shared database.
+  The vault's device keystore is left alone; items saved with it would be lost.
+- **A new conversation appears for its other member without a reload.** Creating a DM sends no
+  `conversation` frame; a `message` frame for a conversation missing from the list now refreshes it.
+- **The server-side sandbox is removed.** Supersedes the opt-in sandbox of ADR-0001 and ADR-0011 and the
+  API half of ADR-0031: `modules/convert.ts`, its route, the `convert:server` permission (stored roles and
+  grants naming it are filtered by `isPermission`), the dev store's feature flags, and the API's
+  `@robyrew/chat-converter` dependency. `bump-chat-converter.yml` moves two pins.
+
+**Consequences:** No database migration. A frame's ciphertext is fixed when it is encrypted, so a message
+queued across several epochs can fail to decrypt for others; Retry re-encrypts only messages that gave up.
+Server errors still carry no `clientId`, so a refused send is detected by its missing `delivered`. One
+browser per account remains the model: every browser publishes its KeyPackages as device `web`, and a
+withdrawal removes those of every browser of the account (each republishes on its next start). A tab still
+running the build before ADR-0034 keeps the shared database open; it is deleted once that tab closes, and
+what that tab wrote after the migration is not carried over.
+**Status:** Accepted. API tests cover `afterSeq` paging, the limit clamp, malformed parameters, KeyPackage
+withdrawal and the removed route. `apps/web` has no test suite, so the catch-up, the outbox, the migration
+and the sign-out deletion have no automated tests in this repository.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -669,4 +746,5 @@ against (2026-06-01):
 - [x] **Redesign in chat-converter's design language (ADR-0033)** — `@robyrew/web-config` theme, chat-converter v0.3.0 and its icons; `src/ui/` (sheets, menus, segmented controls, cards); glass header with Auto · Light · Dark; chat as a container-query app frame; neutral dark theme; theme bootstrap served as a file under the CSP.
 - [x] **House tokens from @robyrew/ui 0.3.3 (ADR-0033, amended 2026-11-11)** — `@robyrew/web-config` v0.3.1; the dark block in `styles.css` keeps only ChatForge's own fills (`--cf-mine`, `--cf-glow`).
 - [x] **ui 0.4.0, Vite 8, chat-converter 0.3.1 (ADR-0033, amended again 2026-11-11)** — the house theme runtime drives the Auto · Light · Dark switch; light glass without the old dark-bar override; accent fills labelled with `--on-accent`, the converter element's buttons included.
+- [x] **Delivery and local storage (ADR-0034)** — catch-up from the cursor (`afterSeq`, `limit` ≤ 200, validated); a persistent outbox with one frame on the wire, settled against the server's history before any resend, and Not sent / Retry / Delete; one IndexedDB database per account, moved out of the shared one on first start; an opt-in "remove my chats from this browser" at sign-out that also withdraws unclaimed KeyPackages; `/api/convert`, `convert:server` and the API's chat-converter dependency removed.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).

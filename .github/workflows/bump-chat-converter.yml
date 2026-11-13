@@ -1,7 +1,7 @@
 name: Bump chat-converter
 
 # Moves ChatForge to the newest vX.Y.Z tag of RobyRew/chat-converter (ADR-0031): updates the pin in
-# @chatforge/types, @chatforge/web and @chatforge/api, re-locks, runs the checks of build-images.yml and,
+# @chatforge/types and @chatforge/web (the API has no pin since ADR-0034), re-locks, runs the checks of build-images.yml and,
 # when they pass, commits to main and dispatches build-images.yml (a push made with GITHUB_TOKEN starts no
 # workflow by itself). Deploying stays manual (ADR-0028).
 
@@ -51,7 +51,7 @@ jobs:
         run: |
           node -e '
             const fs = require("node:fs");
-            for (const f of ["packages/types/package.json", "apps/web/package.json", "apps/api/package.json"]) {
+            for (const f of ["packages/types/package.json", "apps/web/package.json"]) {
               const j = JSON.parse(fs.readFileSync(f, "utf8"));
               j.dependencies["@robyrew/chat-converter"] = `github:RobyRew/chat-converter#${process.env.TAG}`;
               fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
@@ -75,7 +75,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packages/types/package.json apps/web/package.json apps/api/package.json package-lock.json
+          git add packages/types/package.json apps/web/package.json package-lock.json
           git commit -m "deps: @robyrew/chat-converter ${TAG}" \
             -m "Pin moved by .github/workflows/bump-chat-converter.yml; the job ran npm audit, typecheck, lint, test and build before this commit."
           git push origin HEAD:main

@@ -6,6 +6,7 @@
 export type ChatWorkerRequest =
   | { id: string; type: 'init'; userId: string }
   | { id: string; type: 'generateKeyPackages'; count: number }
+  | { id: string; type: 'bundleCount' }
   | { id: string; type: 'startDm'; conversationId: string; peerKeyPackage: string }
   | { id: string; type: 'join'; conversationId: string; welcome: string }
   | { id: string; type: 'hasGroup'; conversationId: string }

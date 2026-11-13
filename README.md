@@ -12,15 +12,14 @@ See [`agents.md`](./agents.md) for the architecture decision log — the source 
   - Reads Telegram Desktop (HTML/JSON), WhatsApp, Instagram, Messenger, Snapchat, VSCO and Hinge exports.
   - Writes the zip Telegram imports, WhatsApp's export layout, **UniversalChat**, HTML, Markdown, JSON.
   - Every conversion produces a **fidelity report** (preserved / approximated / dropped).
-  - Runs the **same engine** in the browser (Web Worker) and in Node (server sandbox).
+  - Runs in the browser (a Web Worker); the export's plaintext stays on the device.
 - **Web SPA** (`@chatforge/web`): the converter page hosts `<chat-converter-app>` (folders, zips or files; an
   inbox for multi-chat exports; edit, preview and convert on the device) plus **Save to Vault**; chat, settings, admin.
   Built on the house design system (`@robyrew/ui` via `@robyrew/web-config`) in chat-converter's app-frame layout,
   with Auto / Light / Dark themes (ADR-0033).
 - **Crypto** (`@chatforge/crypto`): zero-knowledge `seal`/`open` (Argon2id + XChaCha20-Poly1305), BIP39 recovery,
   and **real MLS (RFC 9420)** via `ts-mls` behind a bytes-only, swappable provider.
-- **API** (`@chatforge/api`): Hono + OpenAPI, RBAC admin (roles / feature flags / audit), and an **opt-in
-  server-side conversion sandbox** (ephemeral, zeroized, audit-logged). Identity via self-hosted **Logto** (OIDC),
+- **API** (`@chatforge/api`): Hono + OpenAPI and RBAC admin (roles / feature flags / audit). Identity via self-hosted **Logto** (OIDC),
   data in Postgres/Drizzle, blobs in S3-compatible object storage.
 - **Infra**: non-root images, nginx CSP, local `docker compose` (Postgres/Garage/Mailpit), and a separate image-only production compose with gated CI builds.
 
@@ -61,9 +60,8 @@ docker compose up                        # local web + api + postgres + garage (
 ```
 
 ## Privacy
-Conversion is client-side by default — plaintext never leaves your browser. Large files can
-opt into an ephemeral, audit-logged server sandbox. Saved data is always E2E-encrypted; not
-even an admin can read it. Admin controls accounts/roles/features — never content.
+Conversion runs only in your browser; the export's plaintext is never uploaded (the opt-in server
+sandbox was removed, ADR-0034). Saved data is always E2E-encrypted; not even an admin can read it. Admin controls accounts/roles/features — never content.
 
 ## License
 Apache-2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

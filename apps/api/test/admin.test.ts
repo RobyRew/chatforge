@@ -43,7 +43,7 @@ describe('admin — RBAC + users', () => {
     );
     expect(detail.user.role).toBe('moderator');
     expect(detail.effectivePermissions).toContain('audit:read'); // moderator perm
-    expect(detail.effectivePermissions).not.toContain('convert:server');
+    expect(detail.effectivePermissions).not.toContain('conversions:write'); // a user perm moderators lack
   });
 });
 

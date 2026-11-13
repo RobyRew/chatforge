@@ -1,11 +1,13 @@
-import type { ReactNode } from 'react';
-import { ACCOUNT_URL, signIn, signOut, useSession } from '../../lib/authClient';
+import { useState, type ReactNode } from 'react';
+import { ACCOUNT_URL, signIn, useSession } from '../../lib/authClient';
 import { Loading } from '../../ui/controls';
 import { Icon } from '../../ui/Icon';
 import { Avatar } from '../chat/Avatar';
+import { SignOutSheet } from './SignOutSheet';
 
 export function AuthPanel(): ReactNode {
   const { data, isPending } = useSession();
+  const [signingOut, setSigningOut] = useState(false);
 
   if (isPending) return <Loading />;
 
@@ -26,12 +28,13 @@ export function AuthPanel(): ReactNode {
             Manage account
             <Icon name="external" size={14} />
           </a>
-          <button type="button" className="rw-btn rw-btn--danger" onClick={() => signOut()}>
+          <button type="button" className="rw-btn rw-btn--danger" onClick={() => setSigningOut(true)}>
             <Icon name="logOut" size={16} />
             Sign out
           </button>
         </div>
         <p className="cf-fineprint">Password, passkeys, social logins and 2FA are managed in your account.</p>
+        {signingOut && <SignOutSheet userId={data.user.id} onClose={() => setSigningOut(false)} />}
       </section>
     );
   }

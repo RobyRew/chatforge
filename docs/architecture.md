@@ -21,8 +21,9 @@ test; the apps bundle them. npm workspaces + Turborepo (`npx turbo run test type
 The conversion engine, the chat model and the converter UI (`<chat-converter-app>`) are not in this
 repository: they come from [RobyRew/chat-converter](https://github.com/RobyRew/chat-converter)
 (`@robyrew/chat-converter`, raw TypeScript as well), installed by git tag. The converter page adds Save to
-Vault to the element; the API's server-side sandbox calls the same `convert`.
-`.github/workflows/bump-chat-converter.yml` moves the pin when a new tag appears (ADR-0031).
+Vault to the element. Conversion runs only in the browser: the API has had no conversion endpoint since
+ADR-0034, and only `@chatforge/types` and `@chatforge/web` depend on the package.
+`.github/workflows/bump-chat-converter.yml` moves those two pins when a new tag appears (ADR-0031).
 
 ## Runtime topology
 
@@ -76,15 +77,32 @@ permission, because there is no mechanism that could implement one.
 ```
 
 - **MLS runs in a dedicated Web Worker.** Key material and per-conversation group state live in the
-  worker and the origin's IndexedDB — never on the main thread, never on the wire in plaintext. The
-  worker processes operations **strictly serially** so the ratchet never races.
+  worker and IndexedDB — never on the main thread, never on the wire in plaintext. The worker processes
+  operations **strictly serially** so the ratchet never races.
+- **One local database per account** (`chatforge-chat:<userId>`, ADR-0034): accounts that share a
+  browser never share keys or cached messages. The database every account shared before is emptied
+  account by account on first start. Signing out offers to delete this browser's chat data; that
+  leaves the account's existing chats unreadable on this browser, because group state exists nowhere
+  else, and it withdraws the account's unclaimed KeyPackages.
 - **The payload inside the ciphertext is structured** (`apps/web/src/lib/chatPayload.ts`):
   `{t:'msg'}`, `{t:'file'}` or `{t:'reaction'}`. Replies and reactions reference a message by its
   **`seq`** — the per-conversation sequence number, which is the only id both peers share (local ids
   differ between sender and receiver). Attachment keys and filenames ride in here too.
 - **Forward secrecy has a consequence:** MLS cannot re-decrypt old ciphertext, so decrypted plaintext
-  is cached locally per device. On load the client renders its cache and decrypts only messages with a
-  `seq` beyond its cursor, **in order**. A gap stops the run — later messages could not decrypt anyway.
+  is cached locally per device. The client renders its cache, then **catches up from its cursor**:
+  `GET …/messages?afterSeq=<cursor>` pages forward, oldest first, until it has everything — on start,
+  after every WebSocket reconnect, and whenever a live message's `seq` skips one. Each conversation is
+  processed on one queue, strictly in `seq` order. The cursor moves only past messages that decrypted;
+  one that fails is passed over once a later message decrypts (a commit from before this device joined,
+  say), and retried on the next catch-up while nothing after it does.
+- **Sending goes through an outbox** (ADR-0034). Every encrypted frame — message, reaction, group
+  commit — is stored in IndexedDB first and stays until the server answers `delivered`. One frame is
+  on the wire at a time, so the server stores them in the order they were encrypted. After a reconnect
+  (or 15 s without `delivered`) the client reads the server's history before resending, and frames
+  found there by their ciphertext count as delivered instead of being sent again. (A frame stored after
+  that read, or sent by a second tab too, can still be stored twice; receivers pass over the second
+  copy.) A message that still fails after five sends shows as **Not sent** with Retry and Delete;
+  commits are retried until stored. Frames for a conversation the account has left are dropped.
 - **Bootstrapping a DM:** each client publishes public MLS *KeyPackages* to the server and keeps the
   pool topped up to 5. Starting a DM claims one (single-use, consumed under `FOR UPDATE SKIP LOCKED`),
   builds the group, and relays a self-contained *Welcome*. If a peer has never opened Chat they have no

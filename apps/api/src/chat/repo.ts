@@ -1,5 +1,5 @@
 import type { ChatMessageDTO, ContactDTO, ConversationSummary, WelcomeDTO } from '@chatforge/types';
-import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import { getDb } from '../db';
 import { chatContacts, chatConversations, chatMembers, chatMessages, keyPackages, mlsWelcomes, user, userPresence } from '../db/schema';
 
@@ -8,6 +8,17 @@ import { chatContacts, chatConversations, chatMembers, chatMessages, keyPackages
  * them. Two implementations: Drizzle/Postgres (prod) and in-memory (tests/dev), swappable via
  * `setChatRepo` so the WS transport can be verified in-process without a database.
  */
+
+/**
+ * A page of a conversation's messages, returned oldest first. With `afterSeq` the page holds the oldest
+ * messages after it (how a client catches up from its cursor); without it, the newest `limit` messages.
+ */
+export interface ListMessagesOptions {
+  afterSeq?: number;
+  beforeSeq?: number;
+  limit?: number;
+}
+
 export interface ChatRepo {
   createDm(a: string, b: string): Promise<{ id: string; created: boolean }>;
   /** Create a group conversation. `creator` becomes its owner — the only one who may add/remove. */
@@ -24,7 +35,7 @@ export interface ChatRepo {
   findUserIdByEmail(email: string): Promise<string | undefined>;
   findUserIdByUsername(username: string): Promise<string | undefined>;
   appendMessage(conversationId: string, senderId: string, ciphertext: string): Promise<ChatMessageDTO>;
-  listMessages(conversationId: string, opts?: { beforeSeq?: number; limit?: number }): Promise<ChatMessageDTO[]>;
+  listMessages(conversationId: string, opts?: ListMessagesOptions): Promise<ChatMessageDTO[]>;
   setLastRead(conversationId: string, userId: string, seq: number): Promise<void>;
   setLastSeen(userId: string): Promise<void>;
   getLastSeen(userId: string): Promise<number | null>;
@@ -35,6 +46,11 @@ export interface ChatRepo {
   claimKeyPackage(userId: string): Promise<string | null>;
   /** How many unclaimed KeyPackages the user has left (so a client knows when to replenish). */
   countKeyPackages(userId: string): Promise<number>;
+  /**
+   * Delete all of the user's unclaimed KeyPackages; returns how many. Used when a browser deletes its
+   * chat data (ADR-0034): the private halves are gone, so a peer claiming one could never be joined.
+   */
+  withdrawKeyPackages(userId: string): Promise<number>;
   /** Relay an MLS Welcome to a recipient. */
   storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }>;
   /** List the Welcomes waiting for a recipient. */
@@ -206,15 +222,20 @@ export class DrizzleChatRepo implements ChatRepo {
     });
   }
 
-  async listMessages(conversationId: string, opts: { beforeSeq?: number; limit?: number } = {}): Promise<ChatMessageDTO[]> {
+  async listMessages(conversationId: string, opts: ListMessagesOptions = {}): Promise<ChatMessageDTO[]> {
     const limit = opts.limit ?? 50;
-    const cond =
-      opts.beforeSeq != null
-        ? and(eq(chatMessages.conversationId, conversationId), lt(chatMessages.seq, opts.beforeSeq))
-        : eq(chatMessages.conversationId, conversationId);
-    const rows = await this.db.select().from(chatMessages).where(cond).orderBy(desc(chatMessages.seq)).limit(limit);
+    const cond = and(
+      eq(chatMessages.conversationId, conversationId),
+      opts.afterSeq != null ? gt(chatMessages.seq, opts.afterSeq) : undefined,
+      opts.beforeSeq != null ? lt(chatMessages.seq, opts.beforeSeq) : undefined,
+    );
+    // With afterSeq the oldest rows come first, so a client paging forward from its cursor never jumps a
+    // gap. Without it, the newest `limit` rows — read newest-first, returned oldest-first like the other.
+    const rows =
+      opts.afterSeq != null
+        ? await this.db.select().from(chatMessages).where(cond).orderBy(asc(chatMessages.seq)).limit(limit)
+        : (await this.db.select().from(chatMessages).where(cond).orderBy(desc(chatMessages.seq)).limit(limit)).reverse();
     return rows
-      .reverse()
       .map((r) => ({
         id: r.id,
         conversationId: r.conversationId,
@@ -271,6 +292,11 @@ export class DrizzleChatRepo implements ChatRepo {
   async countKeyPackages(userId: string): Promise<number> {
     const agg = await this.db.select({ n: sql<number>`count(*)::int` }).from(keyPackages).where(eq(keyPackages.userId, userId));
     return agg[0]?.n ?? 0;
+  }
+
+  async withdrawKeyPackages(userId: string): Promise<number> {
+    const rows = await this.db.delete(keyPackages).where(eq(keyPackages.userId, userId)).returning({ id: keyPackages.id });
+    return rows.length;
   }
 
   async storeWelcome(conversationId: string, recipientId: string, senderId: string, welcome: string): Promise<{ id: string }> {

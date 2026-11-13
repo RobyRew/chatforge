@@ -158,10 +158,16 @@ export const api = {
       get<{ conversations: ConversationSummary[] }>('/api/chat/conversations').then((r) => r.conversations),
     createDm: (target: { userId?: string; email?: string; username?: string }): Promise<{ conversationId: string; created: boolean }> =>
       post('/api/chat/conversations', target),
-    listMessages: (conversationId: string, limit = 100): Promise<ChatMessageDTO[]> =>
-      get<{ messages: ChatMessageDTO[] }>(`/api/chat/conversations/${conversationId}/messages?limit=${limit}`).then((r) => r.messages),
+    /** Oldest first. With `afterSeq`: the oldest `limit` messages after it; without: the newest `limit`. */
+    listMessages: (conversationId: string, opts: { afterSeq?: number; limit?: number } = {}): Promise<ChatMessageDTO[]> => {
+      const q = new URLSearchParams({ limit: String(opts.limit ?? 100) });
+      if (opts.afterSeq !== undefined) q.set('afterSeq', String(opts.afterSeq));
+      return get<{ messages: ChatMessageDTO[] }>(`/api/chat/conversations/${conversationId}/messages?${q}`).then((r) => r.messages);
+    },
 
     keyPackageCount: (): Promise<number> => get<{ count: number }>('/api/chat/keypackages').then((r) => r.count),
+    /** Withdraw my unclaimed KeyPackages (their private halves are about to be deleted with this browser's data). */
+    withdrawKeyPackages: (): Promise<number> => del<{ withdrawn: number }>('/api/chat/keypackages').then((r) => r.withdrawn),
     publishKeyPackages: (deviceId: string, keyPackages: string[]): Promise<{ published: number }> =>
       post('/api/chat/keypackages', { deviceId, keyPackages }),
     claimKeyPackage: (target: { userId?: string; email?: string; username?: string }): Promise<{ userId: string; keyPackage: string }> =>

@@ -5,6 +5,18 @@ import { requirePermission, type Vars } from '../middleware';
 /** REST surface for chat: create/list DMs + paginated history. Realtime is the WS gateway. */
 export const chatModule = new Hono<Vars>();
 
+/** The most messages one history request returns; `limit` is clamped to 1..MAX_PAGE. */
+export const MAX_PAGE = 200;
+const DEFAULT_PAGE = 50;
+
+/** A sequence-number query parameter: absent → undefined, a decimal integer up to 2e9 → it, else null. */
+function seqParam(value: string | undefined): number | undefined | null {
+  if (value === undefined || value === '') return undefined;
+  if (!/^\d{1,10}$/.test(value)) return null;
+  const n = Number(value);
+  return n <= 2_000_000_000 ? n : null;
+}
+
 /** Resolve a peer by userId, email, or @username (in that order). */
 async function resolvePeerId(body: { userId?: string; email?: string; username?: string }): Promise<string | undefined> {
   if (body.userId) return body.userId;
@@ -149,11 +161,18 @@ chatModule.get('/conversations/:id/messages', requirePermission('chat:use'), asy
   const me = c.get('user')!;
   const id = c.req.param('id');
   if (!(await getChatRepo().isMember(id, me.id))) return c.json({ error: 'forbidden' }, 403);
-  const beforeSeq = c.req.query('beforeSeq');
-  const limit = c.req.query('limit');
+  // `afterSeq` pages forward from a client's cursor (oldest first); `beforeSeq` pages back. Both were
+  // passed through Number() unchecked before, and `limit` had no ceiling.
+  const afterSeq = seqParam(c.req.query('afterSeq'));
+  const beforeSeq = seqParam(c.req.query('beforeSeq'));
+  const limit = seqParam(c.req.query('limit'));
+  if (afterSeq === null || beforeSeq === null || limit === null) {
+    return c.json({ error: 'afterSeq, beforeSeq and limit must be non-negative integers' }, 400);
+  }
   const messages = await getChatRepo().listMessages(id, {
-    beforeSeq: beforeSeq ? Number(beforeSeq) : undefined,
-    limit: limit ? Number(limit) : undefined,
+    ...(afterSeq !== undefined ? { afterSeq } : {}),
+    ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+    limit: Math.min(Math.max(limit ?? DEFAULT_PAGE, 1), MAX_PAGE),
   });
   return c.json({ messages });
 });
@@ -179,6 +198,16 @@ chatModule.post('/keypackages', requirePermission('chat:use'), async (c) => {
 chatModule.get('/keypackages', requirePermission('chat:use'), async (c) => {
   const me = c.get('user')!;
   return c.json({ count: await getChatRepo().countKeyPackages(me.id) });
+});
+
+/**
+ * Withdraw all of *my* unclaimed KeyPackages. A browser that deletes its chat data (ADR-0034) calls this:
+ * their private halves went with it, so a peer claiming one would start a DM nobody could join. The next
+ * start publishes fresh ones.
+ */
+chatModule.delete('/keypackages', requirePermission('chat:use'), async (c) => {
+  const me = c.get('user')!;
+  return c.json({ withdrawn: await getChatRepo().withdrawKeyPackages(me.id) });
 });
 
 /** Claim (and consume) one of a peer's KeyPackages to bootstrap a DM with them. */

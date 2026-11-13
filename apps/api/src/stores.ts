@@ -1,8 +1,8 @@
 import type { ConversionRecord } from '@chatforge/types';
 
 /**
- * In-memory data layer for the dev bearer-token fallback and the converter/chat API tests (the real
- * admin data lives in Postgres via AdminRepo). Keeping it behind this module localizes the seam.
+ * In-memory data layer for the dev bearer-token fallback and the chat API tests (the real admin data,
+ * feature flags included, lives in Postgres via AdminRepo). Keeping it behind this module localizes the seam.
  */
 export interface User {
   id: string;
@@ -27,8 +27,6 @@ function rid(prefix: string): string {
 class Stores {
   readonly users = new Map<string, User>();
   readonly sessions = new Map<string, string>(); // token -> userId
-  readonly flags = new Map<string, boolean>(); // global feature flags
-  readonly userFlags = new Map<string, Map<string, boolean>>(); // userId -> flag -> enabled
   readonly audit: AuditEntry[] = [];
   readonly conversions = new Map<string, ConversionRecord[]>(); // userId -> records
 
@@ -43,15 +41,6 @@ class Stores {
     this.users.set(user.id, user);
     this.sessions.set('owner-token', owner.id);
     this.sessions.set('user-token', user.id);
-    this.flags.set('server-side-conversion', true);
-    this.flags.set('chat', false);
-    this.flags.set('registration', true);
-  }
-
-  flagEnabled(flag: string, userId?: string): boolean {
-    const override = userId ? this.userFlags.get(userId)?.get(flag) : undefined;
-    if (override !== undefined) return override;
-    return this.flags.get(flag) ?? false;
   }
 
   newToken(userId: string): string {

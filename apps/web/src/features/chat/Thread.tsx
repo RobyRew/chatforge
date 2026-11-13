@@ -358,7 +358,7 @@ function Bubble({
   });
   const time = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
-    <div className={`cf-msg ${m.mine ? 'cf-msg--out' : 'cf-msg--in'}${cont ? ' is-cont' : ''}${m.pending ? ' is-pending' : ''}`}>
+    <div className={`cf-msg ${m.mine ? 'cf-msg--out' : 'cf-msg--in'}${cont ? ' is-cont' : ''}${m.pending ? ' is-pending' : ''}${m.failed ? ' is-failed' : ''}`}>
       <div className="cf-msg__line">
         <div {...press} className={`cf-bubble${m.deleted ? ' is-deleted' : ''}`}>
           {who && (
@@ -390,11 +390,16 @@ function Bubble({
           )}
           <span className="cf-bubble__time">
             {time}
-            {m.mine && (
-              <span className={`cf-ticks${read ? ' is-read' : ''}`} aria-label={m.pending ? 'Sending' : read ? 'Read' : 'Delivered'}>
-                <Icon name={m.pending ? 'clock' : read ? 'checks' : 'check'} size={13} />
-              </span>
-            )}
+            {m.mine &&
+              (m.failed ? (
+                <span className="cf-ticks is-failed" aria-label="Not sent">
+                  <Icon name="alert" size={13} />
+                </span>
+              ) : (
+                <span className={`cf-ticks${read ? ' is-read' : ''}`} aria-label={m.pending ? 'Sending' : read ? 'Read' : 'Delivered'}>
+                  <Icon name={m.pending ? 'clock' : read ? 'checks' : 'check'} size={13} />
+                </span>
+              ))}
           </span>
         </div>
         {m.seq !== null && (
@@ -411,6 +416,17 @@ function Bubble({
           </button>
         )}
       </div>
+      {m.failed && (
+        <div className="cf-msg__failed" role="status">
+          <span>Not sent</span>
+          <button type="button" onClick={() => void chatClient.retrySend(conversationId, m.id)}>
+            Retry
+          </button>
+          <button type="button" onClick={() => void chatClient.discardUnsent(conversationId, m.id)}>
+            Delete
+          </button>
+        </div>
+      )}
       {!m.deleted && m.reactions && m.reactions.length > 0 && (
         <div className="cf-reactions">
           {m.reactions.map((r) => (
