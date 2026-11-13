@@ -687,6 +687,39 @@ what that tab wrote after the migration is not carried over.
 withdrawal and the removed route. `apps/web` has no test suite, so the catch-up, the outbox, the migration
 and the sign-out deletion have no automated tests in this repository.
 
+## ADR-0035 — The converter bump takes only a tag whose commit passed chat-converter's tests (2026-11-13) · Accepted
+
+**Amends** the bump workflow of ADR-0031.
+**Context:** `bump-chat-converter.yml` moved the pins to the newest `vX.Y.Z` tag and then ran ChatForge's own
+checks, which exercise little of the converter: its importer and exporter tests live in chat-converter (ADR-0031),
+and until 2026-11-13 chat-converter's CI ran none of them, because its workflow only built the site image. A tag on
+a commit that broke an importer could reach ChatForge's `main` on the next daily run. Since `7fded54`,
+chat-converter's `build-image.yml` runs a job named `test` (type check and vitest) on pushes to `main` and on `v*`
+tag pushes, and builds its image only after that job passes (chat-converter ADR-0013).
+**Decision:**
+- Before the pins move, the job runs `infra/ci/converter-tests-passed.sh <tag>`. It resolves the tag to its commit
+  with `git ls-remote` (the peeled `^{}` line of an annotated tag) and reads that commit's `test` check runs from
+  the GitHub API. Each workflow run is one check suite, and a re-run adds its attempt to the same suite; only the
+  newest attempt in a suite counts, so a re-run replaces a failed attempt. The tag is accepted when no newest
+  attempt is still queued or running, at least one concluded `success`, and none concluded anything else:
+  `cancelled`, `skipped`, `neutral`, `stale` and `action_required` (a run waiting for approval) carry no verdict,
+  and every other conclusion, `failure` and `timed_out` included, refuses the tag. Before any run exists, or while
+  one is queued or running, the script polls every 20 s for up to 10 minutes, so a dispatch right after tagging
+  waits for the tag's own run.
+- After re-locking, the job requires `package-lock.json` to resolve `@robyrew/chat-converter` to that commit. npm
+  resolves the tag again: a tag moved in between, or a lockfile npm left on the previous commit, would otherwise
+  install a commit the check never looked at.
+- A refused tag fails the run, with the URLs of the check runs it found in the log, and moves nothing. The next
+  daily run tries again; no older tag is taken instead.
+- `GH_TOKEN` is the job's `GITHUB_TOKEN`, with the workflow's permissions unchanged: the check runs of a public
+  repository need no permission (an anonymous request for them answered 200 on 2026-11-13).
+- The bump commit's message names the commit the pin resolves to.
+
+**Consequences:** ChatForge depends on chat-converter's job name `test`; if it is renamed there, every bump fails
+with "no 'test' run that passed or failed". Tags v0.1.0–v0.3.1 predate the job and have no run, so the bump would
+refuse them; ChatForge already pins v0.3.1.
+**Status:** Accepted.
+
 # Conventions
 - **TypeScript strict** everywhere (`noUncheckedIndexedAccess`, `noUnusedLocals`, etc.) — see
   `tsconfig.base.json`. Parsers must be defensive: never assume a regex group/array index exists.
@@ -747,4 +780,5 @@ against (2026-06-01):
 - [x] **House tokens from @robyrew/ui 0.3.3 (ADR-0033, amended 2026-11-11)** — `@robyrew/web-config` v0.3.1; the dark block in `styles.css` keeps only ChatForge's own fills (`--cf-mine`, `--cf-glow`).
 - [x] **ui 0.4.0, Vite 8, chat-converter 0.3.1 (ADR-0033, amended again 2026-11-11)** — the house theme runtime drives the Auto · Light · Dark switch; light glass without the old dark-bar override; accent fills labelled with `--on-accent`, the converter element's buttons included.
 - [x] **Delivery and local storage (ADR-0034)** — catch-up from the cursor (`afterSeq`, `limit` ≤ 200, validated); a persistent outbox with one frame on the wire, settled against the server's history before any resend, and Not sent / Retry / Delete; one IndexedDB database per account, moved out of the shared one on first start; an opt-in "remove my chats from this browser" at sign-out that also withdraws unclaimed KeyPackages; `/api/convert`, `convert:server` and the API's chat-converter dependency removed.
+- [x] **Converter bump requires chat-converter's tests (ADR-0035)** — `infra/ci/converter-tests-passed.sh` refuses a tag unless chat-converter's CI `test` job passed on its commit (waiting up to 10 minutes for a run still going); the lockfile must resolve that commit; a refused tag fails the bump run and moves nothing.
 - [ ] Roadmap next: device-at-rest sealing of chat group state, Argon2id vault KDF, message editing, search over the local cache, api-client codegen, Discord importer (in chat-converter).

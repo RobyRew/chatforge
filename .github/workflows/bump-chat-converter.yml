@@ -1,9 +1,11 @@
 name: Bump chat-converter
 
-# Moves ChatForge to the newest vX.Y.Z tag of RobyRew/chat-converter (ADR-0031): updates the pin in
-# @chatforge/types and @chatforge/web (the API has no pin since ADR-0034), re-locks, runs the checks of build-images.yml and,
-# when they pass, commits to main and dispatches build-images.yml (a push made with GITHUB_TOKEN starts no
-# workflow by itself). Deploying stays manual (ADR-0028).
+# Moves ChatForge to the newest vX.Y.Z tag of RobyRew/chat-converter (ADR-0031). The tag is taken only when
+# chat-converter's CI ran its `test` job on the tag's commit and the job passed (ADR-0035,
+# infra/ci/converter-tests-passed.sh); a refused tag fails this run and moves nothing. Then: updates the pin in
+# @chatforge/types and @chatforge/web (the API has no pin since ADR-0034), re-locks, requires the lockfile to resolve
+# the tested commit, runs the checks of build-images.yml and, when they pass, commits to main and dispatches
+# build-images.yml (a push made with GITHUB_TOKEN starts no workflow by itself). Deploying stays manual (ADR-0028).
 
 on:
   schedule:
@@ -44,11 +46,22 @@ jobs:
             echo "tag=$latest" >> "$GITHUB_OUTPUT"
           fi
 
+      # Waits up to 10 minutes while the tag's test run is missing, queued or running; writes the commit as `sha`.
+      - name: Require chat-converter's tests on the tag's commit
+        id: tested
+        if: steps.tags.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tags.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash infra/ci/converter-tests-passed.sh "$TAG"
+
       - name: Move the pins and re-lock
         if: steps.tags.outputs.tag != ''
         env:
           TAG: ${{ steps.tags.outputs.tag }}
+          SHA: ${{ steps.tested.outputs.sha }}
         run: |
+          # shellcheck disable=SC2016 # the node -e scripts use JavaScript template literals, not shell expansion
           node -e '
             const fs = require("node:fs");
             for (const f of ["packages/types/package.json", "apps/web/package.json"]) {
@@ -60,6 +73,22 @@ jobs:
           # After a git spec changes, npm installs one copy per workspace; dedupe hoists them back to one.
           npm dedupe --ignore-scripts --no-audit --no-fund
           npm ci --ignore-scripts --no-audit --no-fund
+          # npm resolved the tag again; a tag moved since the test check would show up as another commit here.
+          # shellcheck disable=SC2016
+          node -e '
+            const want = process.env.SHA;
+            const { packages = {} } = require("./package-lock.json");
+            const found = Object.entries(packages)
+              .filter(([path]) => path.endsWith("node_modules/@robyrew/chat-converter"))
+              .map(([path, entry]) => `${path} -> ${entry.resolved ?? "(no resolved)"}`);
+            const ok = /^[0-9a-f]{40}$/.test(want ?? "") && found.length > 0
+              && found.every((line) => line.endsWith(`#${want}`));
+            if (!ok) {
+              console.log(`::error::package-lock.json does not resolve @robyrew/chat-converter to the tested commit ${want || "(none)"}`);
+              console.log(found.join("\n") || "no @robyrew/chat-converter entry");
+              process.exit(1);
+            }
+            console.log(found.join("\n"));'
 
       - name: Run the checks of build-images.yml
         if: steps.tags.outputs.tag != ''
@@ -71,12 +100,13 @@ jobs:
         if: steps.tags.outputs.tag != ''
         env:
           TAG: ${{ steps.tags.outputs.tag }}
+          SHA: ${{ steps.tested.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add packages/types/package.json apps/web/package.json package-lock.json
           git commit -m "deps: @robyrew/chat-converter ${TAG}" \
-            -m "Pin moved by .github/workflows/bump-chat-converter.yml; the job ran npm audit, typecheck, lint, test and build before this commit."
+            -m "Pin moved by .github/workflows/bump-chat-converter.yml; the lockfile resolves ${TAG} to ${SHA}. The job requires a passing 'test' check run of chat-converter's CI on that commit, then runs npm audit, typecheck, lint, test and build before committing."
           git push origin HEAD:main
           gh workflow run build-images.yml --ref main

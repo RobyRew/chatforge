@@ -23,7 +23,8 @@ repository: they come from [RobyRew/chat-converter](https://github.com/RobyRew/c
 (`@robyrew/chat-converter`, raw TypeScript as well), installed by git tag. The converter page adds Save to
 Vault to the element. Conversion runs only in the browser: the API has had no conversion endpoint since
 ADR-0034, and only `@chatforge/types` and `@chatforge/web` depend on the package.
-`.github/workflows/bump-chat-converter.yml` moves those two pins when a new tag appears (ADR-0031).
+`.github/workflows/bump-chat-converter.yml` moves those two pins when a new tag appears and chat-converter's CI
+`test` job passed on its commit (ADR-0031, ADR-0035).
 
 ## Runtime topology
 
